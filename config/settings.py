@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     # NEW (multi collection)
     qdrant_image_collection: str = "food_image_vectors"
     qdrant_text_collection: str = "food_text_vectors"
+    # collections
+
+    qdrant_food_image_collection: str = "food_image_vectors"
+    qdrant_food_text_collection: str = "food_text_vectors"
+
+    qdrant_beverage_collection: str = "beverage_vectors"
+    qdrant_exercise_collection: str = "exercise_vectors"
+    qdrant_lifestyle_collection: str = "lifestyle_vectors"
 
     # =========================
     # PATHS

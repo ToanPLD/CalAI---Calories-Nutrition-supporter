@@ -1,10 +1,115 @@
-# pipelines/query_pipeline.py
+# from core.services.clip_service import CLIPService
+# from core.services.embedding_service import EmbeddingService
+# from core.services.qdrant_service import QdrantService
+# from core.services.filter_service import FilterService
+# from core.services.rerank_service import RerankService
 
+
+# class QueryPipeline:
+
+#     def __init__(self):
+#         self.clip = CLIPService()
+#         self.embedder = EmbeddingService()   # SBERT
+#         self.qdrant = QdrantService()
+#         self.filter = FilterService()
+#         self.rerank = RerankService()
+
+#     def query(self, image_path=None, text=None, filters=None, top_k=5):
+
+#         image_results = []
+#         text_results = []
+
+#         # ================= IMAGE QUERY =================
+#         if image_path:
+#             image_vec = self.clip.embed_image(image_path)
+
+#             image_results = self.qdrant.search_image(image_vec, 30)
+
+#             # 🔥 dùng CLIP text encoder thay vì "food item"
+#             text_vec = self.clip.embed_text("food, meal, nutrition")
+
+#             text_results = self.qdrant.search_text(text_vec, 20)
+
+#             query_vec = image_vec  # dùng vector image làm chuẩn
+
+#         # ================= TEXT QUERY =================
+#         else:
+#             text_vec = self.embedder.embed_text(text)
+
+#             text_results = self.qdrant.search_text(text_vec, 30)
+
+#             # 🔥 map text → image space
+#             image_vec = self.clip.embed_text(text)
+#             image_results = self.qdrant.search_image(image_vec, 20)
+
+#             query_vec = text_vec
+
+#         # ================= WEIGHT MERGE =================
+#         weighted = []
+
+#         for item in image_results:
+#             item.score = getattr(item, "score", 1.0) * 1.2  # ưu tiên image
+#             weighted.append(item)
+
+#         for item in text_results:
+#             item.score = getattr(item, "score", 1.0)
+#             weighted.append(item)
+
+#         # ================= REMOVE DUP =================
+#         unique = {}
+#         for item in weighted:
+#             unique[item.id] = item
+
+#         results = list(unique.values())
+
+#         # ================= FILTER =================
+#         if filters:
+#             results = self.filter.apply(results, filters)
+
+#         # ================= RERANK =================
+#         results = self.rerank.rerank(query_vec, results)
+
+#         return results[:top_k]
+
+#     # ================= MULTI-DOMAIN QUERY =================
+#     def query_all(self, text, domain=None, filters=None, top_k=5):
+
+#         vec = self.clip.embed_text(text)
+
+#         results = []
+
+#         # 🔥 domain routing
+#         if domain == "food":
+#             results += self.qdrant.search_food(vec)
+
+#         elif domain == "beverage":
+#             results += self.qdrant.search_beverage(vec)
+
+#         elif domain == "exercise":
+#             results += self.qdrant.search_exercise(vec)
+
+#         elif domain == "lifestyle":
+#             results += self.qdrant.search_lifestyle(vec)
+
+#         else:
+#             # search all (fallback)
+#             results += self.qdrant.search_food(vec)
+#             results += self.qdrant.search_beverage(vec)
+#             results += self.qdrant.search_exercise(vec)
+#             results += self.qdrant.search_lifestyle(vec)
+
+#         # ================= FILTER =================
+#         if filters:
+#             results = self.filter.apply(results, filters)
+
+#         # ================= RERANK =================
+#         results = self.rerank.rerank(vec, results)
+
+#         return results[:top_k]
+    
 from core.services.clip_service import CLIPService
 from core.services.qdrant_service import QdrantService
-from core.utils.logger import get_logger
-
-logger = get_logger("query")
+from core.services.rerank_service import RerankService
 
 
 class QueryPipeline:
@@ -13,71 +118,46 @@ class QueryPipeline:
         self.clip = CLIPService()
         self.qdrant = QdrantService()
 
-    def run(self, image_path: str):
-        vector = self.clip.embed_image(image_path)
+    def parse_query(self, query: str):
+        """
+        simple numeric parser
+        """
+        min_cal = None
+        max_cal = None
 
-        results = self.qdrant.search(vector, top_k=20)
+        if ">" in query:
+            min_cal = int(query.split(">")[-1])
 
-        if not results:
-            return {"error": "No results"}
+        if "<" in query:
+            max_cal = int(query.split("<")[-1])
 
-        # 🔥 STEP 1: filter noise
-        results = [r for r in results if r.score > 0.2]
+        return query, min_cal, max_cal
 
-        # 🔥 STEP 2: remove duplicates
-        seen = set()
-        unique = []
-        for r in results:
-            name = r.payload["food_name"]
-            if name not in seen:
-                seen.add(name)
-                unique.append(r)
+    def run(self, query: str):
 
-        results = unique[:10]
+        # =========================
+        # PARSE
+        # =========================
+        query_text, min_cal, max_cal = self.parse_query(query)
 
-        # 🔥 STEP 3: rerank bằng CLIP text
-        results = self.rerank(results)
+        # =========================
+        # EMBED
+        # =========================
+        q_vec = self.clip.embed_text(query_text)
 
-        # 🔥 STEP 4: weighted aggregation
-        total_weight = sum(r.score for r in results)
+        # =========================
+        # SEARCH
+        # =========================
+        results = self.qdrant.search(
+            collection_name="exercise_vectors",
+            vector=q_vec,
+            min_calories=min_cal,
+            max_calories=max_cal
+        )
 
-        calories = sum(r.payload["calories"] * r.score for r in results) / total_weight
-        protein = sum(r.payload["protein_g"] * r.score for r in results) / total_weight
-        carbs = sum(r.payload["carbs_g"] * r.score for r in results) / total_weight
-        fat = sum(r.payload["fat_g"] * r.score for r in results) / total_weight
+        # =========================
+        # RERANK
+        # =========================
+        results = RerankService.rerank(q_vec, results)
 
-        # 🔥 STEP 5: confidence score
-        confidence = max(r.score for r in results)
-
-        return {
-            "nutrition": {
-                "calories": round(calories, 2),
-                "protein": round(protein, 2),
-                "carbs": round(carbs, 2),
-                "fat": round(fat, 2),
-            },
-            "confidence": round(confidence, 3),
-            "top_matches": [
-                {
-                    "food": r.payload["food_name"],
-                    "score": round(r.score, 3)
-                }
-                for r in results[:5]
-            ]
-        }
-
-    def rerank(self, results):
-        reranked = []
-
-        for r in results:
-            text_vec = self.clip.embed_text(r.payload["food_name"])
-
-            # cosine similarity (dot vì đã normalize)
-            score = sum(a*b for a, b in zip(text_vec, r.vector))
-
-            r.score = (r.score + score) / 2  # combine score
-            reranked.append(r)
-
-        reranked.sort(key=lambda x: x.score, reverse=True)
-
-        return reranked
+        return results

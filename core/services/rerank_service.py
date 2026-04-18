@@ -3,19 +3,18 @@ import numpy as np
 
 class RerankService:
 
-    def rerank(self, query_vec, items):
-        scored = []
+    @staticmethod
+    def rerank(query_vec, results):
 
-        q = np.array(query_vec)
+        def cosine(a, b):
+            return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-        for item in items:
-            v = np.array(item.vector)
+        rescored = []
 
-            # cosine similarity
-            score = np.dot(q, v)
+        for r in results:
+            score = cosine(query_vec, r.vector)
+            rescored.append((score, r))
 
-            scored.append((score, item))
+        rescored.sort(key=lambda x: x[0], reverse=True)
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        return [x[1] for x in scored]
+        return [r[1] for r in rescored]

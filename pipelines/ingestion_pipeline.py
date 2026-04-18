@@ -1,6 +1,9 @@
 from core.services.clip_service import CLIPService
-from core.services.embedding_service import EmbeddingService
 from data.streaming.hf_stream import HFStreamer
+from core.utils.vector_utils import ensure_list_vector
+from core.utils.logger import get_logger
+
+logger = get_logger("ingestion")
 
 
 class IngestionPipeline:
@@ -8,47 +11,60 @@ class IngestionPipeline:
     def __init__(self, qdrant):
         self.qdrant = qdrant
 
+        # ✅ FIX: import đúng service
         self.clip = CLIPService()
-        self.embedder = EmbeddingService()
         self.streamer = HFStreamer()
 
     async def run(self):
 
-        image_batch = []
-        text_batch = []
+        food_image_batch = []
+        food_text_batch = []
+
+        logger.info("Starting HF ingestion...")
 
         async for item in self.streamer.stream():
 
-            # ================= IMAGE =================
-            if item.image_path:
-                image_vec = self.clip.embed(item.image_path)
+            payload = item.payload or {}
+            payload["domain"] = "food"
 
-                image_batch.append({
-                    "vector": image_vec,
-                    "payload": item.payload
-                })
+            # ================= IMAGE =================
+            if getattr(item, "image_path", None):
+                image_vec = self.clip.embed_image(item.image_path)
+                image_vec = ensure_list_vector(image_vec)
+
+                if image_vec:
+                    food_image_batch.append({
+                        "vector": image_vec,
+                        "payload": payload
+                    })
 
             # ================= TEXT =================
-            if item.text:
-                text_vec = self.embedder.embed_text(item.text)
+            if getattr(item, "text", None):
+                text_vec = self.clip.embed_text(item.text)
+                text_vec = ensure_list_vector(text_vec)
 
-                text_batch.append({
-                    "vector": text_vec,
-                    "payload": item.payload
-                })
+                if text_vec:
+                    food_text_batch.append({
+                        "vector": text_vec,
+                        "payload": payload
+                    })
 
             # ================= FLUSH =================
-            if len(image_batch) >= 8:
-                await self.qdrant.upsert_image_batch(image_batch)
-                image_batch.clear()
+            if len(food_image_batch) >= 8:
+                await self.qdrant.upsert_food_image_batch(food_image_batch)
+                logger.info(f"Upsert image batch: {len(food_image_batch)}")
+                food_image_batch.clear()
 
-            if len(text_batch) >= 8:
-                await self.qdrant.upsert_text_batch(text_batch)
-                text_batch.clear()
+            if len(food_text_batch) >= 8:
+                await self.qdrant.upsert_food_text_batch(food_text_batch)
+                logger.info(f"Upsert text batch: {len(food_text_batch)}")
+                food_text_batch.clear()
 
-        # flush cuối
-        if image_batch:
-            await self.qdrant.upsert_image_batch(image_batch)
+        # ================= FINAL FLUSH =================
+        if food_image_batch:
+            await self.qdrant.upsert_food_image_batch(food_image_batch)
 
-        if text_batch:
-            await self.qdrant.upsert_text_batch(text_batch)
+        if food_text_batch:
+            await self.qdrant.upsert_food_text_batch(food_text_batch)
+
+        logger.info("HF ingestion done")

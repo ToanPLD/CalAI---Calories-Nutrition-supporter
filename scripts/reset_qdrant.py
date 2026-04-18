@@ -1,5 +1,4 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance
 from config.settings import settings
 
 client = QdrantClient(
@@ -16,12 +15,10 @@ collections = [
 ]
 
 for col in collections:
-    client.recreate_collection(
-        collection_name=col,
-        vectors_config=VectorParams(
-            size=512,
-            distance=Distance.COSINE
-        )
-    )
+    try:
+        client.delete_collection(col)
+        print(f"🗑 Deleted: {col}")
+    except:
+        pass
 
-print("✅ Qdrant initialized")
+print("✅ All collections removed")
