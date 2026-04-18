@@ -1,0 +1,49 @@
+fastapi==0.111.0
+uvicorn==0.30.0
+
+pydantic==2.7.4
+pydantic-settings==2.3.0
+
+qdrant-client==1.11.0
+
+transformers==4.44.0
+torchvision==0.19.0
+timm==0.9.16
+
+datasets==2.20.0
+
+aiohttp==3.9.5
+aiofiles==24.1.0
+
+pillow==10.4.0
+numpy==1.26.4
+
+python-dotenv==1.0.1
+
+# Core dependencies
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Qdrant
+qdrant-client>=1.7.0
+
+# Deep Learning & Transformers
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.36.0
+timm>=0.9.0
+
+# Async HTTP
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+
+# HuggingFace Datasets
+datasets>=2.15.0
+
+# FastAPI
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Utilities
+python-dotenv>=1.0.0
+Pillow>=10.1.0

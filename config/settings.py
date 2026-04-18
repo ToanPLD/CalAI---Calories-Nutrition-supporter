@@ -1,0 +1,36 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
+
+    # =========================
+    # QDRANT
+    # =========================
+    qdrant_url: str
+    qdrant_api_key: str
+
+    # NEW (multi collection)
+    qdrant_image_collection: str = "food_image_vectors"
+    qdrant_text_collection: str = "food_text_vectors"
+
+    # =========================
+    # PATHS
+    # =========================
+    image_dir: str = "data/storage/images"
+
+    # =========================
+    # MODEL
+    # =========================
+    vit_model: str = "google/vit-base-patch16-224"
+
+    # =========================
+    # BATCH
+    # =========================
+    batch_size: int = 8
+
+
+settings = Settings()

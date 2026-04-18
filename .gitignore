@@ -1,0 +1,104 @@
+# =========================
+# PYTHON
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual env
+venv/
+.env/
+.venv/
+env/
+ENV/
+
+# =========================
+# ENV / SECRETS
+# =========================
+.env
+.env.*
+*.env
+
+# =========================
+# LOGS
+# =========================
+logs/
+*.log
+
+# =========================
+# DATASETS & STORAGE (RẤT QUAN TRỌNG)
+# =========================
+data/storage/images/
+data/storage/cache/
+data/storage/checkpoints/
+data/storage/*.jsonl
+
+# HuggingFace cache
+.cache/
+huggingface/
+~/.cache/huggingface/
+
+# =========================
+# MODEL FILES (KHÔNG PUSH)
+# =========================
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+models/
+weights/
+
+# =========================
+# NOTEBOOK
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# IDE / EDITOR
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# BUILD / DIST
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# DOCKER (nếu không dùng)
+# =========================
+docker/
+*.tar
+
+# =========================
+# TEST / COVERAGE
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# =========================
+# TEMP FILES
+# =========================
+tmp/
+temp/
+*.tmp
+
+# =========================
+# QDRANT LOCAL STORAGE (nếu có)
+# =========================
+qdrant_storage/
