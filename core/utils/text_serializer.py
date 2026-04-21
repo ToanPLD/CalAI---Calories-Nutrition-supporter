@@ -211,18 +211,30 @@
 #     text = " | ".join(parts)
 
 #     return text[:max_chars]   # 🔥 tránh lỗi CLIP
-def serialize_row(payload: dict, max_chars=500):
+# def serialize_row(payload: dict, max_chars=500):
+#     parts = []
+
+#     for k, v in payload.items():
+#         if v is None:
+#             continue
+
+#         val = str(v).strip()
+
+#         if val == "" or val.lower() == "nan":
+#             continue
+
+#         parts.append(f"{k}: {val}")
+
+#     return " | ".join(parts)[:max_chars]
+def serialize_row(payload):
+
+    # 🔥 chỉ lấy field quan trọng
+    keys = ["food_name", "calories", "protein", "fat", "carb"]
+
     parts = []
 
-    for k, v in payload.items():
-        if v is None:
-            continue
+    for k in keys:
+        if k in payload and payload[k] is not None:
+            parts.append(f"{k}: {payload[k]}")
 
-        val = str(v).strip()
-
-        if val == "" or val.lower() == "nan":
-            continue
-
-        parts.append(f"{k}: {val}")
-
-    return " | ".join(parts)[:max_chars]
+    return " | ".join(parts)

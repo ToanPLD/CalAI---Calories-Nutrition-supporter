@@ -1,103 +1,16 @@
-# import hashlib
-# import uuid
-# from qdrant_client import QdrantClient
-# from qdrant_client.models import (
-#     PointStruct,
-#     VectorParams,
-#     Distance
-# )
-# from config.settings import settings
+# core/services/qdrant_service.py
 
-
-# class QdrantService:
-
-
-#     def ensure_collection(self, name, dim=512):
-
-#         if not self.client.collection_exists(name):
-#             self.client.create_collection(
-#                 collection_name=name,
-#                 vectors_config=VectorParams(
-#                     size=dim,
-#                     distance=Distance.COSINE
-#             )
-#         )
-
-#     def __init__(self):
-#         self.client = QdrantClient(
-#             url=settings.qdrant_url,
-#             api_key=settings.qdrant_api_key
-#         )
-
-#         # 🔥 INIT ALL COLLECTIONS
-#         self._init_all_collections()
-
-#     # =========================
-#     # INIT COLLECTIONS (🔥 FIX 404)
-#     # =========================
-#     def _init_all_collections(self):
-
-#         collections = {
-#             "food_text_vectors": 512,
-#             "exercise_vectors": 512,
-#             "beverage_vectors": 512,
-#             "lifestyle_vectors": 512
-#         }
-
-#         for name, dim in collections.items():
-#             try:
-#                 self.client.get_collection(name)
-#                 print(f"✅ Collection exists: {name}")
-#             except:
-#                 print(f"⚡ Creating collection: {name}")
-
-#                 self.client.create_collection(
-#                     collection_name=name,
-#                     vectors_config=VectorParams(
-#                         size=dim,
-#                         distance=Distance.COSINE
-#                     )
-#                 )
-
-#     # =========================
-#     # GENERATE STABLE ID
-#     # =========================
-#     def _generate_id(self, payload: dict):
-#         raw = str(payload)
-#         return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16)
-
-#     # =========================
-#     # GENERIC UPSERT
-#     # =========================
-#     def upsert_generic(self, collection_name, items):
-
-#         points = []
-
-#         for item in items:
-#             pid = self._generate_id(item["payload"])
-
-#             points.append(
-#                 PointStruct(
-#                     id=str(uuid.uuid4()),
-#                     vector=item["vector"],
-#                     payload=item["payload"]
-#                 )
-#             )
-
-#         try:
-#             self.client.upsert(
-#                 collection_name=collection_name,
-#                 points=points
-#             )
-
-#             print(f"✅ Upserted {len(points)} → {collection_name}")
-
-#         except Exception as e:
-#             print(f"❌ Upsert error: {e}")
-import uuid
+import hashlib
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, VectorParams, Distance
+from qdrant_client.models import (
+    PointStruct,
+    VectorParams,
+    Distance
+)
+from core.utils.logger import get_logger
 from config.settings import settings
+
+logger = get_logger("qdrant")
 
 
 class QdrantService:
@@ -105,37 +18,72 @@ class QdrantService:
     def __init__(self):
         self.client = QdrantClient(
             url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key
+            api_key=settings.qdrant_api_key,
+            timeout=60
         )
 
+    # =========================
+    # CREATE COLLECTION IF NOT EXISTS
+    # =========================
     def ensure_collection(self, name, dim=512):
 
-        if not self.client.collection_exists(name):
-            self.client.create_collection(
-                collection_name=name,
-                vectors_config=VectorParams(
-                    size=dim,
-                    distance=Distance.COSINE
-                )
-            )
-            print(f"✅ Created collection: {name}")
-        else:
+        collections = self.client.get_collections().collections
+        existing = [c.name for c in collections]
+
+        if name in existing:
             print(f"✅ Collection exists: {name}")
+            return
 
-    def upsert_generic(self, collection_name, items):
+        print(f"🆕 Creating collection: {name}")
 
-        points = []
-
-        for item in items:
-            points.append(
-                PointStruct(
-                    id=item["id"],  # 🔥 SHARED ID
-                    vector=item["vector"],
-                    payload=item["payload"]
-                )
+        self.client.create_collection(
+            collection_name=name,
+            vectors_config=VectorParams(
+                size=dim,
+                distance=Distance.COSINE
             )
-
-        self.client.upsert(
-            collection_name=collection_name,
-            points=points
         )
+
+    # =========================
+    # ID
+    # =========================
+    def _generate_id(self, payload):
+        raw = str(payload)
+        return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16)
+
+    # =========================
+    # UPSERT
+    # =========================
+    def upsert_batch(self, collection, batch, retries=3):
+
+        # 🔥 AUTO CREATE COLLECTION
+        self.ensure_collection(collection, dim=len(batch[0]["vector"]))
+
+        for attempt in range(retries):
+            try:
+                points = []
+
+                for item in batch:
+                    pid = self._generate_id(item["payload"])
+
+                    points.append(
+                        PointStruct(
+                            id=pid,
+                            vector=item["vector"],
+                            payload=item["payload"]
+                        )
+                    )
+
+                self.client.upsert(
+                    collection_name=collection,
+                    points=points
+                )
+
+                return True
+
+            except Exception as e:
+                logger.error(f"❌ Upsert fail (attempt {attempt+1}): {e}")
+                import time
+                time.sleep(2 * (attempt + 1))
+
+        return False
