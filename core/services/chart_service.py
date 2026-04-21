@@ -2,40 +2,43 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import os
 import uuid
 
 
 class ChartService:
 
-    def __init__(self):
-        self.dir = "charts"
-        os.makedirs(self.dir, exist_ok=True)
-
     def bar(self, df, x, y, title):
-        plt.figure()
+
+        if x not in df.columns or y not in df.columns:
+            print("❌ Missing column for chart")
+            print("Columns:", df.columns)
+            return None
+
+        plt.figure(figsize=(8, 5))
         plt.bar(df[x], df[y])
-        plt.xticks(rotation=45)
         plt.title(title)
+        plt.xticks(rotation=30)
 
-        file = f"{uuid.uuid4()}.png"
-        path = os.path.join(self.dir, file)
+        os.makedirs("charts", exist_ok=True)
 
-        plt.savefig(path, bbox_inches="tight")
+        filename = f"charts/{uuid.uuid4()}.png"
+        plt.savefig(filename)
         plt.close()
 
-        return path
+        return filename
 
     def pie(self, df, col, title):
+
+        if col not in df.columns:
+            return None
+
         plt.figure()
-        df[col].value_counts().plot.pie(autopct='%1.1f%%')
+        df[col].value_counts().plot.pie(autopct="%1.1f%%")
         plt.title(title)
 
-        file = f"{uuid.uuid4()}.png"
-        path = os.path.join(self.dir, file)
-
-        plt.savefig(path)
+        filename = f"charts/{uuid.uuid4()}.png"
+        plt.savefig(filename)
         plt.close()
 
-        return path
+        return filename

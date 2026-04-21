@@ -57,7 +57,8 @@ class CLIPService:
     # =========================
     @torch.inference_mode()
     def embed_text(self, text: str):
-
+        text = text[:200]   # hoặc tokenizer-basedf
+        
         try:
             inputs = self.processor(
                 text=[text],
