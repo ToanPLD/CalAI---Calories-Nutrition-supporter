@@ -8,11 +8,27 @@ import uuid
 
 class ChartService:
 
-    def bar(self, df, x, y, title):
+    def auto_chart(self, df):
+
+        if df is None or df.empty:
+            return None
+
+        cols = df.columns
+
+        if any("name" in c.lower() for c in cols):
+            return self.bar_auto(df)
+
+        if len(df) <= 5:
+            col = cols[0]
+            return self.pie(df, col, "Distribution")
+
+        return self.bar_auto(df)
+
+    def bar(self, df, x, y, title="Result"):
 
         if x not in df.columns or y not in df.columns:
-            print("❌ Missing column for chart")
-            print("Columns:", df.columns)
+            print("❌ Missing column")
+            print(df.columns)
             return None
 
         plt.figure(figsize=(8, 5))
@@ -28,17 +44,26 @@ class ChartService:
 
         return filename
 
-    def pie(self, df, col, title):
+    def bar_auto(self, df):
 
-        if col not in df.columns:
+        if df is None or df.empty:
             return None
 
-        plt.figure()
-        df[col].value_counts().plot.pie(autopct="%1.1f%%")
-        plt.title(title)
+        x = next(
+            (c for c in df.columns if "name" in c.lower()),
+            None
+        )
 
-        filename = f"charts/{uuid.uuid4()}.png"
-        plt.savefig(filename)
-        plt.close()
+        if x is None:
+            x = df.columns[0]
 
-        return filename
+        y = next(
+            (c for c in ["calories", "protein", "carb", "fat"] if c in df.columns),
+            None
+        )
+
+        if y is None:
+            print("❌ No numeric column for chart")
+            return None
+
+        return self.bar(df, x, y, "Auto Chart")

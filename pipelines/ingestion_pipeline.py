@@ -1,5 +1,4 @@
 from core.services.clip_service import CLIPService
-from data.streaming.hf_stream import HFStreamer
 from core.utils.vector_utils import ensure_list_vector
 from core.utils.logger import get_logger
 
@@ -10,61 +9,45 @@ class IngestionPipeline:
 
     def __init__(self, qdrant):
         self.qdrant = qdrant
-
-        # ✅ FIX: import đúng service
         self.clip = CLIPService()
-        self.streamer = HFStreamer()
 
-    async def run(self):
+    async def run(self, data):
 
-        food_image_batch = []
-        food_text_batch = []
+        logger.info("🚀 Starting ingestion...")
 
-        logger.info("Starting HF ingestion...")
+        batch = []
+        BATCH_SIZE = 64
 
-        async for item in self.streamer.stream():
+        for i, item in enumerate(data):
 
-            payload = item.payload or {}
+            payload = item.copy()
             payload["domain"] = "food"
 
-            # ================= IMAGE =================
-            if getattr(item, "image_path", None):
-                image_vec = self.clip.embed_image(item.image_path)
-                image_vec = ensure_list_vector(image_vec)
+            text = f"""
+            food: {payload.get('food_name')}
+            calories: {payload.get('calories')}
+            protein: {payload.get('protein')}
+            fat: {payload.get('fat')}
+            carb: {payload.get('carb')}
+            """
 
-                if image_vec:
-                    food_image_batch.append({
-                        "vector": image_vec,
-                        "payload": payload
-                    })
+            vector = self.clip.embed_text(text)
+            vector = ensure_list_vector(vector)
 
-            # ================= TEXT =================
-            if getattr(item, "text", None):
-                text_vec = self.clip.embed_text(item.text)
-                text_vec = ensure_list_vector(text_vec)
+            if not vector:
+                continue
 
-                if text_vec:
-                    food_text_batch.append({
-                        "vector": text_vec,
-                        "payload": payload
-                    })
+            batch.append({
+                "vector": vector,
+                "payload": payload
+            })
 
-            # ================= FLUSH =================
-            if len(food_image_batch) >= 8:
-                await self.qdrant.upsert_food_image_batch(food_image_batch)
-                logger.info(f"Upsert image batch: {len(food_image_batch)}")
-                food_image_batch.clear()
+            if len(batch) >= BATCH_SIZE:
+                self.qdrant.upsert_batch("food_text_vectors", batch)
+                logger.info(f"Inserted {i}")
+                batch.clear()
 
-            if len(food_text_batch) >= 8:
-                await self.qdrant.upsert_food_text_batch(food_text_batch)
-                logger.info(f"Upsert text batch: {len(food_text_batch)}")
-                food_text_batch.clear()
+        if batch:
+            self.qdrant.upsert_batch("food_text_vectors", batch)
 
-        # ================= FINAL FLUSH =================
-        if food_image_batch:
-            await self.qdrant.upsert_food_image_batch(food_image_batch)
-
-        if food_text_batch:
-            await self.qdrant.upsert_food_text_batch(food_text_batch)
-
-        logger.info("HF ingestion done")
+        logger.info("✅ DONE")

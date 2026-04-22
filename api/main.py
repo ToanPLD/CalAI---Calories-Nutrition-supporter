@@ -11,7 +11,7 @@ pipeline = QueryPipeline()
 clip = CLIPService()
 qdrant = QdrantService()
 
-COLLECTION = "hf_food_text"
+COLLECTION = "food_text_vectors"
 
 
 # =========================

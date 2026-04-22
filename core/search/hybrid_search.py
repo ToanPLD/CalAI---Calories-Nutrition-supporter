@@ -12,7 +12,7 @@ def hybrid_search(query, documents, top_k=20):
     vector = clip.embed_text(query)
 
     vector_results = qdrant.client.search(
-        collection_name="hf_food_text",
+        collection_name="food_text_vectors",
         query_vector=vector,
         limit=top_k
     )

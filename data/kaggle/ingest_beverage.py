@@ -1,61 +1,46 @@
 import kagglehub
-import pandas as pd
-
 from core.services.clip_service import CLIPService
 from core.services.qdrant_service import QdrantService
 from core.utils.text_serializer import serialize_row
+from data.kaggle.utils import find_all_csv_files, load_csv_safe
 
 
 def run():
-    print("🚀 Start ingest beverage...")
+    print("🚀 ingest_beverage")
 
-    # tải dataset về local
     dataset_path = kagglehub.dataset_download(
         "heitornunes/caffeine-content-of-drinks"
     )
 
-    print(f"Dataset path: {dataset_path}")
-
-    # 🔥 chọn file đúng (QUAN TRỌNG)
-    import os
-
-    files = os.listdir(dataset_path)
-    print("Files:", files)
-
-    # ví dụ chọn file đầu tiên
-    file_path = os.path.join(dataset_path, files[0])
-
-    # load bằng pandas
-    df = pd.read_csv(file_path)
-
-    print(f"Loaded {len(df)} rows")
+    files = find_all_csv_files(dataset_path)
 
     clip = CLIPService()
     qdrant = QdrantService()
 
     batch = []
 
-    for i, (_, row) in enumerate(df.iterrows()):
-        payload = row.to_dict()
+    for file in files:
+        df = load_csv_safe(file)
 
-        text = serialize_row(payload)
-        vector = clip.embed_text(text)
+        if df is None:
+            continue
 
-        batch.append({
-            "vector": vector,
-            "payload": payload
-        })
+        for _, row in df.iterrows():
+            payload = row.to_dict()
+            payload["domain"] = "beverage"
 
-        # batch insert
-        if len(batch) >= 128:
-            qdrant.upsert_generic("beverage_vectors", batch)
-            batch.clear()
-            print(f"Inserted {i+1} rows")
+            text = serialize_row(payload)
+            vector = clip.embed_text(text)
 
-    if batch:
-        qdrant.upsert_generic("beverage_vectors", batch)
+            if vector is None:
+                continue
 
-    print("✅ Done ingest beverage")
+            batch.append({
+                "vector": vector.tolist(),
+                "payload": payload
+            })
+
+    qdrant.upsert_generic("beverage_vectors", batch)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ class RAGService:
         vector = self.clip.embed_text(query)
 
         results = self.qdrant.client.search(
-            collection_name="hf_food_text",
+            collection_name="food_text_vectors",
             query_vector=vector,
             limit=top_k,
             with_payload=True

@@ -1,136 +1,82 @@
-import os
-import pandas as pd
 import kagglehub
-
 from core.services.clip_service import CLIPService
 from core.services.qdrant_service import QdrantService
 from core.utils.text_serializer import serialize_row
+from data.kaggle.utils import find_all_csv_files, load_csv_safe
 
 
-# =========================
-# FIND FILE (RECURSIVE)
-# =========================
-def find_data_file(dataset_path):
-    for root, _, files in os.walk(dataset_path):
-        for f in files:
-            if f.lower().endswith((".csv", ".xlsx", ".xls")):
-                return os.path.join(root, f)
-    return None
-
-
-# =========================
-# LOAD DATA
-# =========================
-def load_dataframe(file_path):
-
-    if file_path.endswith(".csv"):
-        return pd.read_csv(
-            file_path,
-            encoding="utf-8",
-            engine="python",
-            on_bad_lines="warn"
-        )
-
-    elif file_path.endswith((".xlsx", ".xls")):
-        return pd.read_excel(file_path)
-
-    else:
-        raise ValueError(f"Unsupported file: {file_path}")
-
-
-# =========================
-# MAIN
-# =========================
 def run():
-    print("🚀 Start ingest lifestyle dataset...")
+    print("🚀 ingest_lifestyle")
 
     # =========================
-    # DOWNLOAD
+    # CONFIG
     # =========================
-    dataset_path = kagglehub.dataset_download(
-        "jockeroika/life-style-data"
-    )
+    dataset = "jockeroika/life-style-data"
+    collection = "lifestyle_vectors"
+    domain = "lifestyle"
 
-    print(f"Dataset path: {dataset_path}")
-    print("Root files:", os.listdir(dataset_path))
-
-    # =========================
-    # FIND FILE
-    # =========================
-    file_path = find_data_file(dataset_path)
-
-    if not file_path:
-        raise ValueError("❌ No data file found")
-
-    print(f"📂 Using file: {file_path}")
+    BATCH_SIZE = 16   # 🔥 dataset này PHẢI nhỏ
 
     # =========================
     # LOAD DATA
     # =========================
-    df = load_dataframe(file_path)
+    dataset_path = kagglehub.dataset_download(dataset)
+    files = find_all_csv_files(dataset_path)
 
-    print(f"Loaded {len(df)} rows")
-    print(f"Columns: {list(df.columns)}")
-
-    # =========================
-    # INIT SERVICES
-    # =========================
     clip = CLIPService()
     qdrant = QdrantService()
 
     batch = []
-    BATCH_SIZE = 64
+    total = 0
 
     # =========================
     # PROCESS
     # =========================
-    for idx, row in df.iterrows():
+    for file in files:
+        df = load_csv_safe(file)
 
-        payload = row.to_dict()
-
-        # 🔥 lifestyle data rất nhiều field → check nhẹ
-        if len(payload.keys()) < 5:
-            print("⚠️ Suspicious row:", payload)
-
-        # =========================
-        # SERIALIZE
-        # =========================
-        text = serialize_row(payload)
-
-        if not text:
+        if df is None:
             continue
 
-        # =========================
-        # EMBEDDING
-        # =========================
-        vector = clip.embed_text(text)
+        for idx, row in df.iterrows():
 
-        if vector is None:
-            continue
+            payload = row.to_dict()
+            payload["domain"] = domain
 
-        if hasattr(vector, "tolist"):
-            vector = vector.tolist()
+            # 🔥 giảm payload size (QUAN TRỌNG)
+            for k, v in payload.items():
+                if isinstance(v, str) and len(v) > 150:
+                    payload[k] = v[:150]
 
-        batch.append({
-            "vector": vector,
-            "payload": payload
-        })
+            text = serialize_row(payload)
 
-        # =========================
-        # UPSERT
-        # =========================
-        if len(batch) >= BATCH_SIZE:
-            qdrant.upsert_generic("lifestyle_vectors", batch)
-            print(f"✅ Inserted {idx + 1}")
-            batch.clear()
+            vector = clip.embed_text(text)
+
+            if vector is None:
+                continue
+
+            batch.append({
+                "vector": vector.tolist(),
+                "payload": payload
+            })
+
+            total += 1
+
+            # =========================
+            # FLUSH NHỎ
+            # =========================
+            if len(batch) >= BATCH_SIZE:
+                qdrant.upsert_generic(collection, batch)
+                print(f"✅ Upserted {total}")
+                batch.clear()
 
     # =========================
     # FINAL FLUSH
     # =========================
     if batch:
-        qdrant.upsert_generic("lifestyle_vectors", batch)
+        qdrant.upsert_generic(collection, batch)
 
-    print("✅ Done ingest lifestyle dataset")
+    print("✅ Done ingest_lifestyle")
 
 
 if __name__ == "__main__":

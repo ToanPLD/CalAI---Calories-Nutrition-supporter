@@ -9,56 +9,97 @@ class SearchService:
         self.clip = CLIPService()
         self.qdrant = QdrantService()
 
+    # =========================
+    # MAIN SEARCH PIPELINE
+    # =========================
     def search(self, query, collection="food_text_vectors", limit=50):
 
-        # ================= EMBED QUERY =================
         vector = self.clip.embed_text(query)
 
-        if vector is None:
-            return pd.DataFrame()
-
-        # ================= SEARCH =================
         results = self.qdrant.client.search(
             collection_name=collection,
             query_vector=vector,
-            limit=limit,
-            with_payload=True
+            limit=limit
         )
 
-        # ================= EXTRACT =================
-        data = [r.payload for r in results if r.payload]
+        data = []
 
-        if not data:
-            return pd.DataFrame()
+        for r in results:
+            # ✅ copy để tránh mutate payload gốc
+            item = dict(r.payload)
+
+            # ❌ remove image hoàn toàn
+            item.pop("image_path", None)
+
+            # score từ vector DB
+            item["score"] = r.score
+
+            data.append(item)
 
         df = pd.DataFrame(data)
 
-        # ================= 🔥 DEDUPLICATE =================
+        if df.empty:
+            return df
+
+        # ✅ DEDUP
         df = self._deduplicate(df)
 
-        return df
+        # ✅ RERANK semantic nhẹ
+        df = self.rerank(df, query)
+
+        return df.reset_index(drop=True)
 
     # =========================
-    # DEDUP LOGIC
+    # RERANK
+    # =========================
+    def rerank(self, df, query):
+
+        if df.empty:
+            return df
+
+        q = query.lower()
+
+        # boost text match
+        df["boost"] = df.apply(
+            lambda row: sum(
+                1 for v in row.values
+                if isinstance(v, str) and q in v.lower()
+            ),
+            axis=1
+        )
+
+        # semantic score nhẹ
+        df["nutrition_score"] = (
+            df.get("protein", 0) / (df.get("calories", 1) + 1)
+        )
+
+        df["final_score"] = (
+            df["score"] +
+            df["boost"] * 0.2 +
+            df["nutrition_score"] * 0.3
+        )
+
+        return df.sort_values("final_score", ascending=False)
+
+    # =========================
+    # DEDUP
     # =========================
     def _deduplicate(self, df: pd.DataFrame):
 
-        # 👉 nếu có id thì ưu tiên id
+        if df.empty:
+            return df
+
+        # ưu tiên id
         if "id" in df.columns:
             df = df.drop_duplicates(subset=["id"])
 
-        # 👉 fallback: dùng numeric fields
         else:
-            subset_cols = []
-
-            for col in ["food_name", "calories", "protein", "carb", "fat"]:
-                if col in df.columns:
-                    subset_cols.append(col)
+            subset_cols = [
+                col for col in ["food_name", "calories", "protein", "carb", "fat"]
+                if col in df.columns
+            ]
 
             if subset_cols:
                 df = df.drop_duplicates(subset=subset_cols)
 
-        # reset index cho sạch
-        df = df.reset_index(drop=True)
-
-        return df
+        return df.reset_index(drop=True)

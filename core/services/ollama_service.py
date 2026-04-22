@@ -16,7 +16,6 @@ class OllamaService:
 
             data = res.json()
 
-            # 🔥 FIX MULTI FORMAT
             if "response" in data:
                 return data["response"]
 

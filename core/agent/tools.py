@@ -29,26 +29,29 @@ class AgentTools:
             if "gt" in cond:
                 df = df[df[col] > cond["gt"]]
 
+
         return df
 
     # ================= COMPUTE =================
-    def run_compute(self, df, op):
+    def run_compute(self, df, operation):
 
         if df is None or df.empty:
             return df
 
-        op = op.lower()
+        op = operation.lower()
 
-        if "compare" in op or "so sánh" in op:
-            return df.head(2)
+        if "compare" in op or "comparison" in op or "so sánh" in op:
+                return df.head(2)
 
         if "top" in op:
-            col = "protein" if "protein" in op else "calories"
-            if col in df.columns:
-                return df.sort_values(col, ascending=False).head(10)
+            col = "protein" if "protein" in df.columns else "calories"
+            return df.sort_values(col, ascending=False).head(10)
 
-        if "average" in op or "trung bình" in op:
-            return pd.DataFrame([df.mean(numeric_only=True)])
+        if "low" in op or "ít calo" in op:
+            return df.sort_values("calories", ascending=True).head(10)
+
+        if "average" in op:
+            return df.mean(numeric_only=True).to_frame().T
 
         return df
 
@@ -58,4 +61,13 @@ class AgentTools:
         if df is None or df.empty:
             return None
 
-        return self.chart.bar_auto(df)
+        if not chart_type:
+            return self.chart.auto_chart(df)
+
+        if chart_type == "bar":
+            return self.chart.bar_auto(df)
+
+        if chart_type == "pie":
+            return self.chart.pie(df, df.columns[0], "Distribution")
+
+        return self.chart.auto_chart(df)

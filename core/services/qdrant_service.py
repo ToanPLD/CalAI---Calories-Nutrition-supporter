@@ -1,14 +1,9 @@
-# core/services/qdrant_service.py
-
 import hashlib
 from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    PointStruct,
-    VectorParams,
-    Distance
-)
-from core.utils.logger import get_logger
+from qdrant_client.models import PointStruct, VectorParams, Distance
+
 from config.settings import settings
+from core.utils.logger import get_logger
 
 logger = get_logger("qdrant")
 
@@ -18,23 +13,16 @@ class QdrantService:
     def __init__(self):
         self.client = QdrantClient(
             url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key,
-            timeout=60
+            api_key=settings.qdrant_api_key
         )
 
-    # =========================
-    # CREATE COLLECTION IF NOT EXISTS
-    # =========================
     def ensure_collection(self, name, dim=512):
+        collections = [c.name for c in self.client.get_collections().collections]
 
-        collections = self.client.get_collections().collections
-        existing = [c.name for c in collections]
-
-        if name in existing:
-            print(f"✅ Collection exists: {name}")
+        if name in collections:
             return
 
-        print(f"🆕 Creating collection: {name}")
+        logger.info(f"🆕 Creating collection: {name}")
 
         self.client.create_collection(
             collection_name=name,
@@ -44,46 +32,80 @@ class QdrantService:
             )
         )
 
-    # =========================
-    # ID
-    # =========================
-    def _generate_id(self, payload):
+    def _generate_id(self, payload: dict):
         raw = str(payload)
         return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16)
 
-    # =========================
-    # UPSERT
-    # =========================
-    def upsert_batch(self, collection, batch, retries=3):
+    def upsert_generic(self, collection_name, items):
 
-        # 🔥 AUTO CREATE COLLECTION
-        self.ensure_collection(collection, dim=len(batch[0]["vector"]))
+        if not items:
+            return
 
-        for attempt in range(retries):
-            try:
-                points = []
+        MAX_BATCH = 16 
 
-                for item in batch:
-                    pid = self._generate_id(item["payload"])
+        for i in range(0, len(items), MAX_BATCH):
 
-                    points.append(
-                        PointStruct(
-                            id=pid,
-                            vector=item["vector"],
-                            payload=item["payload"]
-                        )
+            chunk = items[i:i + MAX_BATCH]
+
+            self.ensure_collection(collection_name, dim=len(chunk[0]["vector"]))
+
+            points = []
+
+            for item in chunk:
+                pid = self._generate_id(item["payload"])
+
+                points.append(
+                    PointStruct(
+                        id=pid,
+                        vector=item["vector"],
+                        payload=item["payload"]
                     )
-
-                self.client.upsert(
-                    collection_name=collection,
-                    points=points
                 )
 
-                return True
+            try:
+                self.client.upsert(
+                collection_name=collection_name,
+                points=points
+            )
 
             except Exception as e:
-                logger.error(f"❌ Upsert fail (attempt {attempt+1}): {e}")
-                import time
-                time.sleep(2 * (attempt + 1))
+                logger.error(f"❌ Upsert error: {e}")
+    # =========================
+    # SEARCH
+    # =========================
+    def search(self, collection_name, vector, top_k=5):
 
-        return False
+        try:
+            return self.client.search(
+                collection_name=collection_name,
+                query_vector=vector,
+                limit=top_k,
+                with_payload=True
+            )
+
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return []
+        
+    def upsert_points(self, collection_name, items):
+        try:
+            from qdrant_client.models import PointStruct
+
+            points = []
+
+            for idx, item in enumerate(items):
+                points.append(
+                    PointStruct(
+                    id=idx,
+                    vector=item["vector"],
+                    payload=item["payload"]
+                )
+            )
+
+            self.client.upsert(
+                collection_name=collection_name,
+                points=points
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Upsert error: {e}")

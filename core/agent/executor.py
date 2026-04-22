@@ -6,23 +6,23 @@ class Executor:
     def execute(self, plan):
 
         df = None
-        chart = None
+        chart_path = None
 
-        for step in plan["steps"]:
-            tool = step["tool"]
+        for step in plan:
 
+            tool = step.get("tool")
             print("👉 STEP:", step)
 
             if tool == "search":
-                df = self.tools.run_search(step.get("query", ""))
+                df = self.tools.run_search(step.get("query"))
 
-            elif tool == "filter":
-                df = self.tools.run_filter_structured(df, step.get("filters", {}))
+            elif tool == "filter" and df is not None:
+                df = self.tools.run_filter(df, step.get("condition"))
 
-            elif tool == "compute":
-                df = self.tools.run_compute(df, step.get("compute", ""))
+            elif tool == "compute" and df is not None:
+                df = self.tools.run_compute(df, step.get("operation"))
 
-            elif tool == "chart":
-                chart = self.tools.run_chart(df, step.get("chart", "bar"))
+            elif tool == "chart" and df is not None:
+                chart_path = self.tools.run_chart(df, step.get("type"))
 
-        return df, chart
+        return df, chart_path

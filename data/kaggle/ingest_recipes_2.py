@@ -8,9 +8,9 @@ from data.kaggle.utils import find_all_csv_files, load_csv_safe
 def run():
     print("🚀 ingest_food_nutrition")
 
-    dataset = "thedevastator/the-nutritional-content-of-food-a-comprehensive"
-    collection = "food_vectors"
-    domain = "food"
+    dataset = "thedevastator/better-recipes-for-a-better-life"
+    collection = "recipes_vectors"
+    domain = "recipe"
 
     BATCH_SIZE = 16 
 

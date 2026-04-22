@@ -6,22 +6,18 @@ from data.kaggle.utils import find_all_csv_files, load_csv_safe
 
 
 def run():
-    print("🚀 ingest_food_nutrition")
+    print("🚀 ingest_beverage")
 
-    dataset = "thedevastator/the-nutritional-content-of-food-a-comprehensive"
-    collection = "food_vectors"
-    domain = "food"
+    dataset_path = kagglehub.dataset_download(
+        "ziya07/diet-recommendations-dataset"
+    )
 
-    BATCH_SIZE = 16 
-
-    dataset_path = kagglehub.dataset_download(dataset)
     files = find_all_csv_files(dataset_path)
 
     clip = CLIPService()
     qdrant = QdrantService()
 
     batch = []
-    total = 0
 
     for file in files:
         df = load_csv_safe(file)
@@ -29,17 +25,11 @@ def run():
         if df is None:
             continue
 
-        for idx, row in df.iterrows():
-
+        for _, row in df.iterrows():
             payload = row.to_dict()
-            payload["domain"] = domain
-
-            for k, v in payload.items():
-                if isinstance(v, str) and len(v) > 120:
-                    payload[k] = v[:120]
+            payload["domain"] = "diet"
 
             text = serialize_row(payload)
-
             vector = clip.embed_text(text)
 
             if vector is None:
@@ -50,17 +40,7 @@ def run():
                 "payload": payload
             })
 
-            total += 1
-
-            if len(batch) >= BATCH_SIZE:
-                qdrant.upsert_generic(collection, batch)
-                print(f"✅ Upserted {total}")
-                batch.clear()
-
-    if batch:
-        qdrant.upsert_generic(collection, batch)
-
-    print("✅ Done ingest_food_nutrition")
+    qdrant.upsert_generic("diet_recommendations_vectors", batch)
 
 
 if __name__ == "__main__":
