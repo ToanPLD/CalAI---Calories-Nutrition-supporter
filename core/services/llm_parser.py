@@ -6,7 +6,7 @@ class LLMParser:
 
     def __init__(self):
         self.url = "http://localhost:11434/api/generate"
-        self.model = "qwen2.5:7b"
+        self.model = "qcwind/qwen2.5-7B-instruct-Q4_K_M:latest"
 
     def parse(self, query: str):
 

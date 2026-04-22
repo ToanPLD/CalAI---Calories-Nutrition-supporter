@@ -1,4 +1,3 @@
-from core.query.query_parser import QueryParser
 from core.search.hybrid_search import HybridSearch
 from core.search.reranker import Reranker
 from core.services.qdrant_service import QdrantService
@@ -13,16 +12,3 @@ class SearchPipeline:
 
         self.hybrid = HybridSearch(self.qdrant, self.clip)
         self.reranker = Reranker()
-
-    def run(self, query: str):
-
-        # ===== parse =====
-        q = QueryParser.parse(query)
-
-        # ===== search =====
-        results = self.hybrid.search(q)
-
-        # ===== rerank =====
-        final = self.reranker.rerank(query, results)
-
-        return final

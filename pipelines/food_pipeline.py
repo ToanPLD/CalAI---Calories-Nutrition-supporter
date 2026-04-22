@@ -29,15 +29,34 @@ class FoodPipeline:
         text_vec = self.clip.embed_text(dish_name + " " + description)
 
         # =========================
-        # STEP 3: HYBRID SEARCH
+        # STEP 3: HYBRID SEARCH (MULTI COLLECTION)
         # =========================
-        rag_results = self.qdrant.hybrid_search(
-            image_vector=image_vec,
-            text_vector=text_vec,
-            collection="food_text_vectors",
-            top_k=5
-        )
+        collections = [
+            "food_text_vectors",
+            "beverage_vectors",
+            "exercise_vectors"
+        ]
 
+        all_hits = []
+
+        for col in collections:
+            hits = self.qdrant.hybrid_search(
+                collection=col,
+                image_vector=image_vec,
+                text_vector=text_vec,
+                top_k=3,
+                alpha=0.6
+            )
+            all_hits.extend(hits)
+
+        # 🔥 sort SAU loop (rất quan trọng)
+        all_hits.sort(key=lambda x: x.score, reverse=True)
+
+        rag_results = all_hits[:5]
+
+        # =========================
+        # EXTRACT NUTRITION
+        # =========================
         nutrition = self._extract_nutrition(rag_results)
 
         # =========================
@@ -50,6 +69,9 @@ class FoodPipeline:
 
         return final
 
+    # =========================
+    # HELPER
+    # =========================
     def _extract_nutrition(self, results):
 
         if not results:

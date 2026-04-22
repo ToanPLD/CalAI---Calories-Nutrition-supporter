@@ -9,6 +9,8 @@ agent = DataAgent()
 def query(q: str):
 
     result = agent.run(q)
+    df = result["df"]
+    chart_path = result["chart"]
 
     if result["type"] == "plan":
         return {

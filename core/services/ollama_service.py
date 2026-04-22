@@ -9,7 +9,7 @@ class OllamaService:
     def generate(self, prompt: str):
         try:
             res = requests.post(self.url, json={
-                "model": "qwen2.5:7b",
+                "model": "qcwind/qwen2.5-7B-instruct-Q4_K_M:latest",
                 "prompt": prompt,
                 "stream": False
             })

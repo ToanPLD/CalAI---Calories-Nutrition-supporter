@@ -9,8 +9,34 @@ class DataAgent:
 
     def __init__(self):
         self.planner = Planner()
-        self.tools = AgentTools()
-        self.executor = Executor(self.tools)
+        self.executor = Executor()
+        self.explainer = ExplainService()
+    def detect_intent(self, query):
+
+        q = query.lower()
+
+        if any(k in q for k in [
+            "lịch", "plan", "kế hoạch", "thực đơn",
+            "diet", "tăng cân", "giảm cân"
+        ]):
+            return "plan"
+
+        return "search"
+
+        self.explainer = ExplainService()
+        self.plan_service = PlanService()
+
+    def detect_intent(self, query):
+
+        q = query.lower()
+
+        if any(k in q for k in [
+            "lịch", "plan", "kế hoạch", "thực đơn",
+            "diet", "tăng cân", "giảm cân"
+        ]):
+            return "plan"
+
+        return "search"
 
         self.explainer = ExplainService()
         self.plan_service = PlanService()

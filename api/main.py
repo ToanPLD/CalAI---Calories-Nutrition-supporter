@@ -42,6 +42,7 @@ def search(
         query_filter=query_filter,
         with_payload=True
     )
+
     @app.get("/query")
     def query(q: str):
         return pipeline.run(q)

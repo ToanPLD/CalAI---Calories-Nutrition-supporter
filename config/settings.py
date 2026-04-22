@@ -1,22 +1,25 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 
 class Settings(BaseSettings):
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
     )
 
     # =========================
-    # QDRANT
+    # QDRANT (🔥 FIX CHUẨN)
     # =========================
-    qdrant_url: str
-    qdrant_api_key: str
+    QDRANT_URL: str
+    QDRANT_API_KEY: str
 
-    # NEW (multi collection)
+    # =========================
+    # COLLECTIONS
+    # =========================
     qdrant_image_collection: str = "food_image_vectors"
     qdrant_text_collection: str = "food_text_vectors"
-    # collections
 
     qdrant_food_image_collection: str = "food_image_vectors"
     qdrant_food_text_collection: str = "food_text_vectors"
