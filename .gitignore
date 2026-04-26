@@ -6,9 +6,10 @@ __pycache__/
 *$py.class
 *.so
 
-# Virtual env
+# =========================
+# VIRTUAL ENV
+# =========================
 venv/
-.env/
 .venv/
 env/
 ENV/
@@ -27,20 +28,25 @@ logs/
 *.log
 
 # =========================
-# DATASETS & STORAGE (RẤT QUAN TRỌNG)
+# DATA (RAG STORAGE)
 # =========================
-data/storage/images/
-data/storage/cache/
-data/storage/checkpoints/
-data/storage/*.jsonl
+data/storage/
+data/cache/
+data/tmp/
 
-# HuggingFace cache
+# vector DB local (nếu dùng local)
+qdrant_storage/
+
+# =========================
+# MODEL CACHE
+# =========================
 .cache/
+.huggingface/
 huggingface/
-~/.cache/huggingface/
+HF_HOME/
 
 # =========================
-# MODEL FILES (KHÔNG PUSH)
+# MODEL FILES (AI)
 # =========================
 *.bin
 *.pt
@@ -58,7 +64,7 @@ weights/
 .ipynb_checkpoints/
 
 # =========================
-# IDE / EDITOR
+# IDE
 # =========================
 .vscode/
 .idea/
@@ -66,39 +72,34 @@ weights/
 *.swo
 
 # =========================
-# OS FILES
+# OS
 # =========================
 .DS_Store
 Thumbs.db
 
 # =========================
-# BUILD / DIST
+# BUILD
 # =========================
 build/
 dist/
 *.egg-info/
 
 # =========================
-# DOCKER (nếu không dùng)
-# =========================
-docker/
-*.tar
-
-# =========================
-# TEST / COVERAGE
+# TEST
 # =========================
 .coverage
 htmlcov/
 .pytest_cache/
 
 # =========================
-# TEMP FILES
+# TEMP
 # =========================
 tmp/
 temp/
 *.tmp
 
 # =========================
-# QDRANT LOCAL STORAGE (nếu có)
+# API KEYS (backup leak prevention)
 # =========================
-qdrant_storage/
+secrets/
+config/secrets.py

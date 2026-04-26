@@ -14,11 +14,10 @@ class RedisCache:
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
             password=settings.REDIS_PASSWORD,
-            decode_responses=True,
+            decode_responses=False,
             socket_connect_timeout=5
         )
 
-        # 🔥 TEST CONNECTION NGAY
         try:
             self.client.ping()
             print("✅ Redis connected")
