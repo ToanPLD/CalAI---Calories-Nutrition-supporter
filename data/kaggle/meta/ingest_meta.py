@@ -1,5 +1,5 @@
 import uuid
-from core.services.clip_service import CLIPService
+from core.embedding.clip_service import CLIPService
 from core.services.qdrant_meta_service import QdrantMetaService
 
 

@@ -1,82 +1,145 @@
+# data/kaggle/ingest_lifestyle.py
+
 import kagglehub
-from core.services.clip_service import CLIPService
-from core.services.qdrant_service import QdrantService
+
+from core.services.retrieval.qdrant_service import QdrantService
 from core.utils.text_serializer import serialize_row
 from data.kaggle.utils import find_all_csv_files, load_csv_safe
 
+from core.services.cache.embedding_cache import EmbeddingCache
+from core.services.cache.dedup_service import DedupService
+from core.embedding.text_embedding_service import TextEmbeddingService
+
 
 def run():
-    print("🚀 ingest_lifestyle")
+    print("🚀 ingest_lifestyle (768 model)")
 
-    # =========================
-    # CONFIG
-    # =========================
     dataset = "jockeroika/life-style-data"
-    collection = "lifestyle_vectors"
-    domain = "lifestyle"
+    COLLECTION = "lifestyle_vectors_768"
+    DOMAIN = "lifestyle"
 
-    BATCH_SIZE = 16   # 🔥 dataset này PHẢI nhỏ
+    UPSERT_BATCH = 64
+    EMBED_BATCH = 64
 
-    # =========================
-    # LOAD DATA
-    # =========================
     dataset_path = kagglehub.dataset_download(dataset)
     files = find_all_csv_files(dataset_path)
 
-    clip = CLIPService()
+    if not files:
+        raise ValueError("❌ No CSV found")
+
     qdrant = QdrantService()
+    text_embed = TextEmbeddingService()
+
+    cache = EmbeddingCache()
+    dedup = DedupService()
 
     batch = []
+    texts = []
+    payloads = []
+
     total = 0
 
-    # =========================
-    # PROCESS
-    # =========================
     for file in files:
-        df = load_csv_safe(file)
 
+        print(f"\n📂 Processing: {file}")
+
+        df = load_csv_safe(file)
         if df is None:
             continue
 
-        for idx, row in df.iterrows():
+        print(f"📊 Rows: {len(df)}")
+
+        for _, row in df.iterrows():
 
             payload = row.to_dict()
-            payload["domain"] = domain
+            payload["domain"] = DOMAIN
 
-            # 🔥 giảm payload size (QUAN TRỌNG)
+            # =========================
+            # CLEAN (dataset lifestyle hay có text dài)
+            # =========================
             for k, v in payload.items():
-                if isinstance(v, str) and len(v) > 150:
-                    payload[k] = v[:150]
+                if isinstance(v, str) and len(v) > 200:
+                    payload[k] = v[:200]
+
+            # =========================
+            # DEDUP
+            # =========================
+            if dedup.is_duplicate(payload):
+                continue
 
             text = serialize_row(payload)
 
-            vector = clip.embed_text(text)
+            # ⚠️ tránh cache vector 512 cũ
+            cache_key = f"bge768:{text}"
+            cached = cache.get(cache_key)
 
-            if vector is None:
+            if cached:
+                batch.append({
+                    "vector": cached,
+                    "payload": payload
+                })
+                total += 1
                 continue
 
-            batch.append({
-                "vector": vector.tolist(),
-                "payload": payload
-            })
-
-            total += 1
+            texts.append(text)
+            payloads.append(payload)
 
             # =========================
-            # FLUSH NHỎ
+            # BATCH EMBEDDING
             # =========================
-            if len(batch) >= BATCH_SIZE:
-                qdrant.upsert_generic(collection, batch)
-                print(f"✅ Upserted {total}")
+            if len(texts) >= EMBED_BATCH:
+
+                vectors = text_embed.embed_batch(texts)
+
+                for t, p, v in zip(texts, payloads, vectors):
+
+                    if v is None:
+                        continue
+
+                    cache.set(f"bge768:{t}", v)
+
+                    batch.append({
+                        "vector": v,
+                        "payload": p
+                    })
+
+                    total += 1
+
+                texts.clear()
+                payloads.clear()
+
+            # =========================
+            # UPSERT
+            # =========================
+            if len(batch) >= UPSERT_BATCH:
+                qdrant.upsert_generic(COLLECTION, batch)
+                print(f"✅ Inserted: {total}")
                 batch.clear()
 
     # =========================
     # FINAL FLUSH
     # =========================
-    if batch:
-        qdrant.upsert_generic(collection, batch)
+    if texts:
+        vectors = text_embed.embed_batch(texts)
 
-    print("✅ Done ingest_lifestyle")
+        for t, p, v in zip(texts, payloads, vectors):
+
+            if v is None:
+                continue
+
+            cache.set(f"bge768:{t}", v)
+
+            batch.append({
+                "vector": v,
+                "payload": p
+            })
+
+            total += 1
+
+    if batch:
+        qdrant.upsert_generic(COLLECTION, batch)
+
+    print(f"\n🎯 DONE ingest_lifestyle → {total} records")
 
 
 if __name__ == "__main__":

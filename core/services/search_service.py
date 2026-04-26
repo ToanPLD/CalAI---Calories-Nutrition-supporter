@@ -1,6 +1,6 @@
 import pandas as pd
-from core.services.clip_service import CLIPService
-from core.services.qdrant_service import QdrantService
+from core.embedding.clip_service import CLIPService
+from core.services.retrieval.qdrant_service import QdrantService
 
 
 class SearchService:

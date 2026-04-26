@@ -1,5 +1,5 @@
-from core.services.qdrant_service import QdrantService
-from core.services.clip_service import CLIPService
+from core.services.retrieval.qdrant_service import QdrantService
+from core.embedding.clip_service import CLIPService
 from core.search.bm25_search import BM25Search
 
 qdrant = QdrantService()

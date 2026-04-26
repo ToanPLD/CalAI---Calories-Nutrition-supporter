@@ -107,8 +107,8 @@
 
 #         return results[:top_k]
     
-from core.services.clip_service import CLIPService
-from core.services.qdrant_service import QdrantService
+from core.embedding.clip_service import CLIPService
+from core.services.retrieval.qdrant_service import QdrantService
 from core.services.rerank_service import RerankService
 
 

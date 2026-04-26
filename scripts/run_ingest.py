@@ -1,6 +1,6 @@
 import asyncio
-from pipelines.ingestion_pipeline import IngestionPipeline
-from core.services.qdrant_service import QdrantService
+from core.pipelines.ingestion_pipeline import IngestionPipeline
+from core.services.retrieval.qdrant_service import QdrantService
 
 
 async def main():

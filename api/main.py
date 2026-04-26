@@ -2,8 +2,8 @@ from fastapi import FastAPI, Query
 from core.services.query_pipeline import QueryPipeline
 
 from typing import Optional
-from core.services.clip_service import CLIPService
-from core.services.qdrant_service import QdrantService
+from core.embedding.clip_service import CLIPService
+from core.services.retrieval.qdrant_service import QdrantService
 
 app = FastAPI()
 pipeline = QueryPipeline()

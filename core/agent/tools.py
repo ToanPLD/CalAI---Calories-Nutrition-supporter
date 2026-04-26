@@ -1,6 +1,6 @@
 import pandas as pd
 from core.services.search_service import SearchService
-from core.services.chart_service import ChartService
+from core.features.chart_service import ChartService
 
 class AgentTools:
 

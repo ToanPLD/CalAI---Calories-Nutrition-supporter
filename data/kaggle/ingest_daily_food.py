@@ -1,76 +1,127 @@
 # data/kaggle/ingest_daily_food.py
 
 import kagglehub
-from core.services.clip_service import CLIPService
-from core.services.qdrant_service import QdrantService
-from core.utils.text_serializer import serialize_row
 
+from core.services.retrieval.qdrant_service import QdrantService
+from core.utils.text_serializer import serialize_row
 from data.kaggle.utils import find_all_csv_files, load_csv_safe
+
+from core.services.cache.embedding_cache import EmbeddingCache
+from core.services.cache.dedup_service import DedupService
+from core.embedding.text_embedding_service import TextEmbeddingService
 
 
 def run():
-    print("🚀 ingest_daily_food")
+    print("🚀 ingest_daily_food (768 model)")
 
-    # =========================
-    # DOWNLOAD DATASET
-    # =========================
     dataset_path = kagglehub.dataset_download(
         "adilshamim8/daily-food-and-nutrition-dataset"
     )
 
-    # =========================
-    # LOAD ALL CSV FILES
-    # =========================
-    csv_files = find_all_csv_files(dataset_path)
+    files = find_all_csv_files(dataset_path)
 
-    if not csv_files:
+    if not files:
         raise ValueError("❌ No CSV found")
 
-    df_list = []
-
-    for f in csv_files:
-        df_list.append(load_csv_safe(f))
-
-    import pandas as pd
-    df = pd.concat(df_list, ignore_index=True)
-
-    # =========================
-    # INIT SERVICES
-    # =========================
-    clip = CLIPService()
     qdrant = QdrantService()
+    text_embed = TextEmbeddingService()
+
+    cache = EmbeddingCache()
+    dedup = DedupService()
+
+    COLLECTION = "food_text_vectors_768"
+
+    UPSERT_BATCH = 64
+    EMBED_BATCH = 64
 
     batch = []
-    BATCH_SIZE = 64
+    texts = []
+    payloads = []
 
-    # =========================
-    # PROCESS
-    # =========================
-    for idx, row in df.iterrows():
+    total = 0
 
-        payload = row.to_dict()
+    for file in files:
 
-        text = serialize_row(payload)
-        vector = clip.embed_text(text)
+        print(f"\n📂 Processing: {file}")
 
-        if vector is None:
+        df = load_csv_safe(file)
+
+        if df is None:
             continue
 
-        batch.append({
-            "vector": vector,
-            "payload": payload
-        })
+        print(f"📊 Rows: {len(df)}")
 
-        if len(batch) >= BATCH_SIZE:
-            qdrant.upsert_points("food_text_vectors", batch)
-            print(f"✅ Upserted {idx + 1}")
-            batch.clear()
+        for _, row in df.iterrows():
 
-    # final flush
+            payload = row.to_dict()
+            payload["domain"] = "food"
+
+            if dedup.is_duplicate(payload):
+                continue
+
+            text = serialize_row(payload)
+
+            cache_key = f"bge768:{text}"
+            cached = cache.get(cache_key)
+
+            if cached:
+                batch.append({
+                    "vector": cached,
+                    "payload": payload
+                })
+                total += 1
+                continue
+
+            texts.append(text)
+            payloads.append(payload)
+
+            if len(texts) >= EMBED_BATCH:
+
+                vectors = text_embed.embed_batch(texts)
+
+                for t, p, v in zip(texts, payloads, vectors):
+
+                    if v is None:
+                        continue
+
+                    cache.set(f"bge768:{t}", v)
+
+                    batch.append({
+                        "vector": v,
+                        "payload": p
+                    })
+
+                    total += 1
+
+                texts.clear()
+                payloads.clear()
+
+            if len(batch) >= UPSERT_BATCH:
+                qdrant.upsert_generic(COLLECTION, batch)
+                print(f"✅ Inserted: {total}")
+                batch.clear()
+
+    if texts:
+        vectors = text_embed.embed_batch(texts)
+
+        for t, p, v in zip(texts, payloads, vectors):
+
+            if v is None:
+                continue
+
+            cache.set(f"bge768:{t}", v)
+
+            batch.append({
+                "vector": v,
+                "payload": p
+            })
+
+            total += 1
+
     if batch:
-        qdrant.upsert_points("food_text_vectors", batch)
+        qdrant.upsert_generic(COLLECTION, batch)
 
-    print("✅ DONE ingest_daily_food")
+    print(f"\n🎯 DONE ingest_daily_food → {total} records")
 
 
 if __name__ == "__main__":

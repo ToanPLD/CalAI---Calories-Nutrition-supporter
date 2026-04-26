@@ -1,4 +1,4 @@
-from core.services.qdrant_service import QdrantService
+from core.services.retrieval.qdrant_service import QdrantService
 
 q = QdrantService()
 

@@ -10,7 +10,6 @@ class QdrantService:
 
         print("👉 QDRANT URL:", settings.QDRANT_URL)
 
-        # 🔥 AUTO detect cloud vs local
         if settings.QDRANT_URL.startswith("https"):
             self.client = QdrantClient(
                 url=settings.QDRANT_URL,
@@ -19,24 +18,25 @@ class QdrantService:
                 timeout=60.0
             )
         else:
-            self.client = QdrantClient(
-                url=settings.QDRANT_URL
-            )
+            self.client = QdrantClient(url=settings.QDRANT_URL)
 
-    # =========================
-    # COLLECTION
-    # =========================
-    def ensure_collection(self, name, dim=512):
+        self._collections_cache = set()
+        self._refresh_collections()
+
+    def _refresh_collections(self):
+        try:
+            cols = self.client.get_collections().collections
+            self._collections_cache = {c.name for c in cols}
+        except Exception as e:
+            print("❌ Cannot fetch collections:", e)
+
+    def ensure_collection(self, name, dim):
 
         try:
-            collections = [
-                c.name for c in self.client.get_collections().collections
-            ]
-
-            if name in collections:
+            if name in self._collections_cache:
                 return
 
-            print(f"🆕 Creating collection: {name}")
+            print(f"🆕 Creating collection: {name} (dim={dim})")
 
             self.client.create_collection(
                 collection_name=name,
@@ -46,35 +46,29 @@ class QdrantService:
                 )
             )
 
+            self._collections_cache.add(name)
+
         except Exception as e:
             print("❌ Qdrant connection error:", e)
 
-    # =========================
-    # ID GENERATOR
-    # =========================
     def _generate_id(self, payload: dict):
         raw = str(payload)
         return int(hashlib.md5(raw.encode()).hexdigest()[:8], 16)
 
-    # =========================
-    # UPSERT
-    # =========================
     def upsert_generic(self, collection_name, items):
 
         if not items:
             return
 
-        BATCH_SIZE = 16
+        BATCH_SIZE = 32
 
         for i in range(0, len(items), BATCH_SIZE):
 
             chunk = items[i:i + BATCH_SIZE]
 
             try:
-                self.ensure_collection(
-                    collection_name,
-                    dim=len(chunk[0]["vector"])
-                )
+                dim = len(chunk[0]["vector"])
+                self.ensure_collection(collection_name, dim)
 
                 points = []
 
@@ -97,10 +91,10 @@ class QdrantService:
             except Exception as e:
                 print("❌ Upsert error:", e)
 
-    # =========================
-    # SEARCH
-    # =========================
     def search(self, collection_name, vector, top_k=5):
+
+        if vector is None:
+            return []
 
         try:
             return self.client.search(
@@ -111,37 +105,37 @@ class QdrantService:
             )
 
         except Exception as e:
-            print("❌ Search error:", e)
+            print(f"❌ Search error ({collection_name}):", e)
             return []
 
-    # =========================
-    # HYBRID SEARCH
-    # =========================
-    def hybrid_search(self, collection, image_vector, text_vector, top_k=5, alpha=0.6):
+    def hybrid_search(self, collection, vector_a, vector_b, top_k=5, alpha=0.6):
+        """
+        ⚠️ CHỈ dùng khi vector cùng dimension
+        """
+
+        if len(vector_a) != len(vector_b):
+            print("⚠️ Skip hybrid_search (dimension mismatch)")
+            return self.search(collection, vector_a, top_k)
 
         try:
-            image_hits = self.search(collection, image_vector, top_k)
-            text_hits = self.search(collection, text_vector, top_k)
+            hits_a = self.search(collection, vector_a, top_k)
+            hits_b = self.search(collection, vector_b, top_k)
 
             score_map = {}
 
-            # 🔥 score image
-            for hit in image_hits:
+            for hit in hits_a:
                 score_map[hit.id] = alpha * hit.score
 
-            # 🔥 score text
-            for hit in text_hits:
+            for hit in hits_b:
                 if hit.id in score_map:
                     score_map[hit.id] += (1 - alpha) * hit.score
                 else:
                     score_map[hit.id] = (1 - alpha) * hit.score
 
-            # 🔥 merge unique
-            merged = {hit.id: hit for hit in image_hits + text_hits}
+            merged = {hit.id: hit for hit in hits_a + hits_b}
 
             final_hits = list(merged.values())
 
-            # 🔥 sort
             final_hits.sort(
                 key=lambda x: score_map.get(x.id, 0),
                 reverse=True

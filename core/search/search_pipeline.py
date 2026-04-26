@@ -1,7 +1,7 @@
 from core.search.hybrid_search import HybridSearch
 from core.search.reranker import Reranker
-from core.services.qdrant_service import QdrantService
-from core.services.clip_service import CLIPService
+from core.services.retrieval.qdrant_service import QdrantService
+from core.embedding.clip_service import CLIPService
 
 
 class SearchPipeline:

@@ -1,4 +1,4 @@
-from pipelines.query_pipeline import QueryPipeline
+from core.pipelines.query_pipeline import QueryPipeline
 
 pipeline = QueryPipeline()
 

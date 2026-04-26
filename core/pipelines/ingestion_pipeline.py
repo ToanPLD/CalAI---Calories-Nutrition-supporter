@@ -1,4 +1,4 @@
-from core.services.clip_service import CLIPService
+from core.embedding.clip_service import CLIPService
 from core.utils.vector_utils import ensure_list_vector
 from core.utils.logger import get_logger
 

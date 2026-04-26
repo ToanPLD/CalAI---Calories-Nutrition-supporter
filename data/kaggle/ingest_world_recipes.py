@@ -1,4 +1,4 @@
-# data/kaggle/ingest_food_nutrition_devastator.py
+# data/kaggle/ingest_world_recipes.py
 
 import kagglehub
 
@@ -12,11 +12,11 @@ from core.embedding.text_embedding_service import TextEmbeddingService
 
 
 def run():
-    print("🚀 ingest_food_nutrition (768 model)")
+    print("🚀 ingest_world_recipes (768 model)")
 
-    dataset = "thedevastator/the-nutritional-content-of-food-a-comprehensive"
-    COLLECTION = "food_nutrition_dev_vectors_768"
-    DOMAIN = "food"
+    dataset = "prajwaldongre/collection-of-recipes-around-the-world"
+    COLLECTION = "food_recipes_vectors_768"
+    DOMAIN = "recipe"
 
     UPSERT_BATCH = 64
     EMBED_BATCH = 64
@@ -40,7 +40,6 @@ def run():
     total = 0
 
     for file in files:
-
         print(f"\n📂 Processing: {file}")
 
         df = load_csv_safe(file)
@@ -123,7 +122,7 @@ def run():
     if batch:
         qdrant.upsert_generic(COLLECTION, batch)
 
-    print(f"\n🎯 DONE ingest_food_nutrition → {total} records")
+    print(f"\n🎯 DONE ingest_world_recipes → {total} records")
 
 
 if __name__ == "__main__":

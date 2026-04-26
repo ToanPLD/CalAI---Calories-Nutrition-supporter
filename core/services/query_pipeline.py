@@ -1,5 +1,5 @@
 from core.services.search_service import SearchService
-from core.services.chart_service import ChartService
+from core.features.chart_service import ChartService
 from core.services.intent_service import IntentService
 from core.services.analytics_service import AnalyticsService
 

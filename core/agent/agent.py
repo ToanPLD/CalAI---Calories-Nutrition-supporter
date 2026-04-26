@@ -1,8 +1,8 @@
 from core.agent.planner import Planner
 from core.agent.executor import Executor
 from core.agent.tools import AgentTools
-from core.services.explain_service import ExplainService
-from core.services.plan_service import PlanService
+from core.features.explain_service import ExplainService
+from core.features.plan_service import PlanService
 
 
 class DataAgent:

@@ -1,5 +1,5 @@
 from core.services.vision.qwen_vl_service import QwenVLService
-from core.services.clip_service import CLIPService
+from core.embedding.clip_service import CLIPService
 from core.services.rag.food_rag_service import FoodRAGService
 from core.services.rerank.cross_encoder import CrossEncoderReranker
 from core.services.nutrition.nutrition_model import NutritionRegressionModel

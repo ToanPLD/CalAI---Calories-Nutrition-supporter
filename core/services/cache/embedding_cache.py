@@ -1,26 +1,25 @@
+import json
 import hashlib
+from core.services.cache.redis_cache import RedisCache
+
 
 class EmbeddingCache:
 
     def __init__(self):
-        self.cache = {}
+        self.redis = RedisCache()
 
-    def _hash(self, data: str):
-        return hashlib.md5(data.encode()).hexdigest()
+    def _key(self, text):
+        return "embed:" + hashlib.md5(text.encode()).hexdigest()
 
-    def get(self, key):
-        return self.cache.get(key)
+    def get(self, text):
+        key = self._key(text)
+        data = self.redis.get(key)
 
-    def set(self, key, value):
-        self.cache[key] = value
+        if data:
+            return json.loads(data)
 
-    def get_or_set(self, key, fn):
+        return None
 
-        h = self._hash(key)
-
-        if h in self.cache:
-            return self.cache[h]
-
-        value = fn()
-        self.cache[h] = value
-        return value
+    def set(self, text, vector):
+        key = self._key(text)
+        self.redis.set(key, json.dumps(vector))
