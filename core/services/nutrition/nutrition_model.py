@@ -14,7 +14,7 @@ class NutritionRegressionModel:
             self.model = None
             self.ready = False
 
-    def predict(self, features: dict):
+    def predict(self, features):
 
         if not self.ready:
             return {
@@ -25,9 +25,30 @@ class NutritionRegressionModel:
                 "note": "fallback (no model)"
             }
 
-        X = [list(features.values())]
+        if not features:
+            return {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "note": "fallback (empty features)"
+            }
 
-        pred = self.model.predict(X)[0]
+        if isinstance(features, dict):
+            values = list(features.values())
+        else:
+            values = list(features)
+
+        try:
+            pred = self.model.predict([values])[0]
+        except Exception as e:
+            return {
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+                "note": f"fallback (prediction failed: {e})"
+            }
 
         return {
             "calories": pred[0],

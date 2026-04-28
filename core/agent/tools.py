@@ -32,6 +32,23 @@ class AgentTools:
 
         return df
 
+    def run_filter(self, df, condition):
+        if df is None or df.empty or not condition:
+            return df
+
+        if isinstance(condition, dict):
+            return self.run_filter_structured(df, condition)
+
+        text = str(condition).lower()
+
+        if ("low calorie" in text or "ít calo" in text) and "calories" in df.columns:
+            return df.sort_values("calories", ascending=True)
+
+        if ("high protein" in text or "giàu protein" in text) and "protein" in df.columns:
+            return df.sort_values("protein", ascending=False)
+
+        return df
+
     # ================= COMPUTE =================
     def run_compute(self, df, operation):
 
@@ -41,13 +58,17 @@ class AgentTools:
         op = operation.lower()
 
         if "compare" in op or "comparison" in op or "so sánh" in op:
-                return df.head(2)
+            return df.head(2)
 
         if "top" in op:
             col = "protein" if "protein" in df.columns else "calories"
+            if col not in df.columns:
+                col = "final_score" if "final_score" in df.columns else df.columns[0]
             return df.sort_values(col, ascending=False).head(10)
 
         if "low" in op or "ít calo" in op:
+            if "calories" not in df.columns:
+                return df.head(10)
             return df.sort_values("calories", ascending=True).head(10)
 
         if "average" in op:

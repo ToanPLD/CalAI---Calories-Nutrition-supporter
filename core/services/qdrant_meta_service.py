@@ -1,21 +1,26 @@
 from qdrant_client import QdrantClient, models
+from config.settings import settings
 
 
 class QdrantMetaService:
 
     def __init__(self):
-        self.client = QdrantClient("http://localhost:6333")
+        self.client = QdrantClient(
+            url=settings.QDRANT_URL,
+            api_key=settings.QDRANT_API_KEY
+        )
 
         self.meta_collection = "meta_vectors"
 
+        # ✅ FIX duplicate key + dùng 768 collections
         self.collections = {
-            "food": "food_vectors",
-            "beverage": "beverage_vectors",
-            "exercise": "exercise_vectors",
-            "lifestyle": "lifestyle_vectors",
+            "food": "food_vectors_768",
+            "beverage": "beverage_vectors_768",
+            "exercise": "exercise_vectors_768",
+            "lifestyle": "lifestyle_vectors_768",
             "diet": "diet_recommendations_vectors",
-            "recipe": "food_recipes_vectors",
-            "recipe": "recipes_vectors"
+            "recipe_food": "food_recipes_vectors_768",
+            "recipe_general": "recipes_vectors_768"
         }
 
         self._init_collections()
@@ -24,60 +29,68 @@ class QdrantMetaService:
 
     def _init_collections(self):
 
-        if self.meta_collection not in [
-            c.name for c in self.client.get_collections().collections
-        ]:
+        try:
+            collections = [
+                c.name for c in self.client.get_collections().collections
+            ]
+
+            if self.meta_collection in collections:
+                return
+
+            print(f"🆕 Creating meta collection (768): {self.meta_collection}")
+
             self.client.create_collection(
                 collection_name=self.meta_collection,
                 vectors_config=models.VectorParams(
-                    size=512,
+                    size=settings.TEXT_VECTOR_DIM,  # ✅ 768
                     distance=models.Distance.COSINE
                 )
             )
+
+        except Exception as e:
+            print("⚠️ Qdrant not ready (skip init):", e)
 
     # ================= UPSERT META =================
 
     def upsert_meta(self, items):
 
-        """
-        items:
-        [
-            {
-                "id": int,
-                "vector": [...],
-                "payload": {
-                    "name": "...",
-                    "domain": "food",
-                    "ref_id": 123
-                }
-            }
-        ]
-        """
+        if not items:
+            return
 
-        self.client.upsert(
-            collection_name=self.meta_collection,
-            points=[
-                models.PointStruct(
-                    id=item["id"],
-                    vector=item["vector"],
-                    payload=item["payload"]
-                )
-                for item in items
-            ]
-        )
+        try:
+            self.client.upsert(
+                collection_name=self.meta_collection,
+                points=[
+                    models.PointStruct(
+                        id=item["id"],
+                        vector=item["vector"],
+                        payload=item["payload"]
+                    )
+                    for item in items
+                ]
+            )
+
+        except Exception as e:
+            print("❌ Meta upsert error:", e)
 
     # ================= SEARCH =================
 
     def search(self, vector, top_k=5):
 
-        hits = self.client.search(
-            collection_name=self.meta_collection,
-            query_vector=vector,
-            limit=top_k,
-            with_payload=True
-        )
+        if vector is None:
+            return []
 
-        return hits
+        try:
+            return self.client.search(
+                collection_name=self.meta_collection,
+                query_vector=vector,
+                limit=top_k,
+                with_payload=True
+            )
+
+        except Exception as e:
+            print("❌ Meta search error:", e)
+            return []
 
     # ================= FETCH FULL DATA =================
 
@@ -86,23 +99,32 @@ class QdrantMetaService:
         results = []
 
         for h in hits:
-            payload = h.payload
 
-            domain = payload["domain"]
-            ref_id = payload["ref_id"]
+            payload = h.payload or {}
+
+            domain = payload.get("domain")
+            ref_id = payload.get("ref_id")
+
+            if not domain or domain not in self.collections:
+                print("⚠️ Unknown domain:", domain)
+                continue
 
             collection = self.collections[domain]
 
-            point = self.client.retrieve(
-                collection_name=collection,
-                ids=[ref_id],
-                with_payload=True
-            )
+            try:
+                point = self.client.retrieve(
+                    collection_name=collection,
+                    ids=[ref_id],
+                    with_payload=True
+                )
 
-            if point:
-                results.append({
-                    "meta_score": h.score,
-                    "data": point[0].payload
-                })
+                if point:
+                    results.append({
+                        "meta_score": h.score,
+                        "data": point[0].payload
+                    })
+
+            except Exception as e:
+                print(f"❌ Fetch error ({collection}):", e)
 
         return results

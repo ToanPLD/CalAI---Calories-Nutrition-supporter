@@ -9,8 +9,6 @@ agent = DataAgent()
 def query(q: str):
 
     result = agent.run(q)
-    df = result["df"]
-    chart_path = result["chart"]
 
     if result["type"] == "plan":
         return {
@@ -21,7 +19,7 @@ def query(q: str):
     df = result["data"]
     chart_path = result["chart"]
 
-    data = df.to_dict(orient="records")
+    data = df.to_dict(orient="records") if df is not None else []
 
     return {
         "type": "chart" if chart_path else "text",

@@ -1,5 +1,7 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from core.services.query_pipeline import QueryPipeline
+from api.routes.food_analysis import router as food_router
+from api.routes.qa import router as qa_router
 
 from typing import Optional
 from core.embedding.clip_service import CLIPService
@@ -7,6 +9,8 @@ from core.services.retrieval.qdrant_service import QdrantService
 
 app = FastAPI()
 pipeline = QueryPipeline()
+app.include_router(food_router)
+app.include_router(qa_router)
 
 clip = CLIPService()
 qdrant = QdrantService()
@@ -26,31 +30,24 @@ def search(
 ):
     vec = clip.embed_text(query)
 
-    # ===== FILTER =====
-    filters = []
-    if min_calories is not None:
-        filters.append({"key": "calories", "range": {"gte": min_calories}})
-    if max_calories is not None:
-        filters.append({"key": "calories", "range": {"lte": max_calories}})
-
-    query_filter = {"must": filters} if filters else None
-
-    results = qdrant.client.search(
+    results = qdrant.search(
         collection_name=COLLECTION,
-        query_vector=vec,
-        limit=top_k,
-        query_filter=query_filter,
-        with_payload=True
+        vector=vec,
+        top_k=top_k,
+        min_calories=min_calories,
+        max_calories=max_calories
     )
 
-    @app.get("/query")
-    def query(q: str):
-        return pipeline.run(q)
     # ===== FORMAT =====
     output = []
     for r in results:
-        payload = r.payload
+        payload = dict(r.payload or {})
         payload["score"] = r.score
         output.append(payload)
 
     return output
+
+
+@app.get("/query")
+def query(q: str):
+    return pipeline.run(q)

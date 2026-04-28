@@ -15,6 +15,7 @@ class QueryPipeline:
     def run(self, query):
 
         intent = self.intent.detect(query)
+        q = query.lower()
 
         df = self.search.search(query)
 
@@ -24,11 +25,14 @@ class QueryPipeline:
         # ================= TOP =================
         if intent == "top_n":
 
-            col = "protein" if "protein" in query else "calories"
+            col = "protein" if "protein" in q else "calories"
+            if col not in df.columns:
+                col = "final_score" if "final_score" in df.columns else df.columns[0]
 
             df2 = self.analytics.top_n(df, col)
 
-            chart = self.chart.bar(df2, "food_name", col, f"Top {col}")
+            x_col = "food_name" if "food_name" in df2.columns else df2.columns[0]
+            chart = self.chart.bar(df2, x_col, col, f"Top {col}")
 
             return {
                 "type": "chart",
@@ -40,10 +44,13 @@ class QueryPipeline:
         if intent == "compare":
 
             col = "calories"
+            if col not in df.columns:
+                col = "final_score" if "final_score" in df.columns else df.columns[0]
 
             df2 = self.analytics.compare(df, col)
 
-            chart = self.chart.bar(df2, "food_name", col, "Compare")
+            x_col = "food_name" if "food_name" in df2.columns else df2.columns[0]
+            chart = self.chart.bar(df2, x_col, col, "Compare")
 
             return {
                 "type": "chart",
@@ -54,7 +61,8 @@ class QueryPipeline:
         # ================= PIE =================
         if intent == "pie":
 
-            chart = self.chart.pie(df, "category", "Distribution")
+            pie_col = "category" if "category" in df.columns else df.columns[0]
+            chart = self.chart.pie(df, pie_col, "Distribution")
 
             return {
                 "type": "chart",

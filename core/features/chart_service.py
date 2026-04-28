@@ -35,6 +35,29 @@ class ChartService:
         plt.bar(df[x], df[y])
         plt.title(title)
         plt.xticks(rotation=30)
+        plt.tight_layout()
+
+        os.makedirs("charts", exist_ok=True)
+
+        filename = f"charts/{uuid.uuid4()}.png"
+        plt.savefig(filename)
+        plt.close()
+
+        return filename
+
+    def pie(self, df, column, title="Distribution"):
+        if df is None or df.empty or column not in df.columns:
+            return None
+
+        counts = df[column].fillna("unknown").astype(str).value_counts().head(8)
+
+        if counts.empty:
+            return None
+
+        plt.figure(figsize=(7, 7))
+        plt.pie(counts.values, labels=counts.index, autopct="%1.1f%%")
+        plt.title(title)
+        plt.tight_layout()
 
         os.makedirs("charts", exist_ok=True)
 

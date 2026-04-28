@@ -33,7 +33,10 @@ async def analyze_food_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
     try:
-        result = await pipeline.analyze(image=image)
+        result = await pipeline.analyze(
+            image=image,
+            filename=file.filename
+        )
 
     except Exception as e:
         print("❌ Pipeline error:", e)

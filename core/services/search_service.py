@@ -16,10 +16,10 @@ class SearchService:
 
         vector = self.clip.embed_text(query)
 
-        results = self.qdrant.client.search(
+        results = self.qdrant.search(
             collection_name=collection,
-            query_vector=vector,
-            limit=limit
+            vector=vector,
+            top_k=limit
         )
 
         data = []
@@ -41,6 +41,8 @@ class SearchService:
         if df.empty:
             return df
 
+        df = self._normalize_columns(df)
+
         # ✅ DEDUP
         df = self._deduplicate(df)
 
@@ -48,6 +50,41 @@ class SearchService:
         df = self.rerank(df, query)
 
         return df.reset_index(drop=True)
+
+    def _normalize_columns(self, df: pd.DataFrame):
+        aliases = {
+            "food": "food_name",
+            "food_name": "food_name",
+            "dish_name": "food_name",
+            "name": "food_name",
+            "item": "food_name",
+            "calorie": "calories",
+            "calories": "calories",
+            "kcal": "calories",
+            "energy": "calories",
+            "protein": "protein",
+            "proteins": "protein",
+            "carb": "carb",
+            "carbs": "carb",
+            "carbohydrate": "carb",
+            "carbohydrates": "carb",
+            "fat": "fat",
+            "fats": "fat",
+            "total_fat": "fat",
+            "category": "category",
+            "type": "category"
+        }
+
+        rename = {}
+        existing = set(df.columns)
+        for col in df.columns:
+            normalized = str(col).strip().lower().replace(" ", "_")
+            target = aliases.get(normalized)
+            if target and target not in existing:
+                rename[col] = target
+                existing.add(target)
+
+        return df.rename(columns=rename)
 
     # =========================
     # RERANK
@@ -68,10 +105,11 @@ class SearchService:
             axis=1
         )
 
+        protein = self._numeric_column(df, "protein", 0)
+        calories = self._numeric_column(df, "calories", 1)
+
         # semantic score nhẹ
-        df["nutrition_score"] = (
-            df.get("protein", 0) / (df.get("calories", 1) + 1)
-        )
+        df["nutrition_score"] = protein / (calories + 1)
 
         df["final_score"] = (
             df["score"] +
@@ -80,6 +118,12 @@ class SearchService:
         )
 
         return df.sort_values("final_score", ascending=False)
+
+    def _numeric_column(self, df, column, default):
+        if column not in df.columns:
+            return pd.Series(default, index=df.index)
+
+        return pd.to_numeric(df[column], errors="coerce").fillna(default)
 
     # =========================
     # DEDUP

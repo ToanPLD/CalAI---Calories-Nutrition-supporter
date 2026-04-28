@@ -8,41 +8,13 @@ from core.features.plan_service import PlanService
 class DataAgent:
 
     def __init__(self):
+        tools = AgentTools()
         self.planner = Planner()
-        self.executor = Executor()
-        self.explainer = ExplainService()
-    def detect_intent(self, query):
-
-        q = query.lower()
-
-        if any(k in q for k in [
-            "lịch", "plan", "kế hoạch", "thực đơn",
-            "diet", "tăng cân", "giảm cân"
-        ]):
-            return "plan"
-
-        return "search"
-
+        self.executor = Executor(tools)
         self.explainer = ExplainService()
         self.plan_service = PlanService()
 
     def detect_intent(self, query):
-
-        q = query.lower()
-
-        if any(k in q for k in [
-            "lịch", "plan", "kế hoạch", "thực đơn",
-            "diet", "tăng cân", "giảm cân"
-        ]):
-            return "plan"
-
-        return "search"
-
-        self.explainer = ExplainService()
-        self.plan_service = PlanService()
-
-    def detect_intent(self, query):
-
         q = query.lower()
 
         if any(k in q for k in [
@@ -54,7 +26,6 @@ class DataAgent:
         return "search"
 
     def run(self, query):
-
         intent = self.detect_intent(query)
 
         if intent == "plan":

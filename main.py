@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from api.routes.food_analysis import router as food_router
+from api.routes.qa import router as qa_router
 
 app = FastAPI(
     title="Food AI API",
@@ -8,6 +9,7 @@ app = FastAPI(
 
 # register route
 app.include_router(food_router)
+app.include_router(qa_router)
 
 
 @app.get("/")

@@ -1,6 +1,7 @@
 import torch
 import hashlib
 import numpy as np
+import json
 from transformers import CLIPProcessor, CLIPModel
 from core.services.cache.redis_cache import RedisCache
 
@@ -23,6 +24,20 @@ class CLIPService:
         text = text.lower().strip()
         return hashlib.md5(text.encode()).hexdigest()
 
+    def _decode_cached_vector(self, cached):
+        if cached is None:
+            return None
+        if isinstance(cached, list):
+            return cached
+        if isinstance(cached, bytes):
+            cached = cached.decode("utf-8")
+        if isinstance(cached, str):
+            try:
+                return json.loads(cached)
+            except json.JSONDecodeError:
+                return None
+        return None
+
     def _hash_image(self, image):
         import io
         buffer = io.BytesIO()
@@ -31,22 +46,20 @@ class CLIPService:
 
     def embed_image(self, image):
 
-        img_hash, img_bytes = self._hash_image(image)
+        img_hash, _ = self._hash_image(image)
 
-        cached = self.cache.client.get(f"img:{img_hash}")
-        if cached:
-            return np.frombuffer(cached, dtype=np.float32).tolist()
+        cached = self.cache.get(f"img:{img_hash}")
+        cached_vector = self._decode_cached_vector(cached)
+        if cached_vector:
+            return cached_vector
 
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
-        vector = self.model.get_image_features(**inputs)[0].detach().cpu().numpy()
 
-        self.cache.client.setex(
-            f"img:{img_hash}",
-            self.cache.ttl,
-            vector.astype(np.float32).tobytes()
-        )
+        vector = self.model.get_image_features(**inputs)[0].detach().cpu().numpy().tolist()
 
-        return vector.tolist()
+        self.cache.set(f"img:{img_hash}", vector)
+
+        return vector
 
     def embed_image_pil(self, image):
         return self.embed_image(image)
@@ -54,12 +67,13 @@ class CLIPService:
 
         text = text[:300]
 
-        key = f"text:{text}"
+        key = f"text:{self._hash_text(text)}"
 
     
         cached = self.cache.get(key)
-        if cached:
-            return cached
+        cached_vector = self._decode_cached_vector(cached)
+        if cached_vector:
+            return cached_vector
 
         inputs = self.processor(text=[text], return_tensors="pt", truncation=True, max_length=77, padding=True).to(self.device)
         vector = self.model.get_text_features(**inputs)[0].detach().cpu().numpy().tolist()

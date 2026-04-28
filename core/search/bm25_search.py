@@ -6,9 +6,12 @@ class BM25Search:
     def __init__(self, documents):
         self.docs = documents
         self.tokenized = [doc.lower().split() for doc in documents]
-        self.bm25 = BM25Okapi(self.tokenized)
+        self.bm25 = BM25Okapi(self.tokenized) if self.tokenized else None
 
     def search(self, query, top_k=20):
+        if self.bm25 is None:
+            return []
+
         tokenized_query = query.lower().split()
         scores = self.bm25.get_scores(tokenized_query)
 

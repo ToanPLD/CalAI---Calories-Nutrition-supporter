@@ -1,6 +1,7 @@
 import hashlib
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, VectorParams, Distance
+from qdrant_client import models
 from config.settings import settings
 
 
@@ -91,17 +92,52 @@ class QdrantService:
             except Exception as e:
                 print("❌ Upsert error:", e)
 
-    def search(self, collection_name, vector, top_k=5):
+    def _build_range_filter(self, min_calories=None, max_calories=None):
+        if min_calories is None and max_calories is None:
+            return None
+
+        range_kwargs = {}
+        if min_calories is not None:
+            range_kwargs["gte"] = min_calories
+        if max_calories is not None:
+            range_kwargs["lte"] = max_calories
+
+        return models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="calories",
+                    range=models.Range(**range_kwargs)
+                )
+            ]
+        )
+
+    def search(
+        self,
+        collection_name,
+        vector,
+        top_k=5,
+        query_filter=None,
+        min_calories=None,
+        max_calories=None,
+        with_vectors=False
+    ):
 
         if vector is None:
             return []
 
         try:
+            final_filter = query_filter or self._build_range_filter(
+                min_calories=min_calories,
+                max_calories=max_calories
+            )
+
             return self.client.search(
                 collection_name=collection_name,
                 query_vector=vector,
                 limit=top_k,
-                with_payload=True
+                query_filter=final_filter,
+                with_payload=True,
+                with_vectors=with_vectors
             )
 
         except Exception as e:

@@ -9,44 +9,49 @@ class PlanService:
     def generate(self, query):
 
         prompt = f"""
-Bạn là chuyên gia dinh dưỡng và huấn luyện viên thể hình.
+Bạn là chuyên gia dinh dưỡng và huấn luyện viên thể hình cho chatbox Messenger.
 
-User:
+Câu hỏi / mục tiêu người dùng:
 {query}
 
 Nhiệm vụ:
-- Tạo lịch trình ăn uống 7 ngày
-- Phù hợp mục tiêu tăng cân
+- Hiểu mục tiêu thật của người dùng: tăng cân, giảm cân, giữ cân, tăng cơ, kiểm soát calories hoặc cải thiện lối sống.
+- Tạo kế hoạch ăn uống/luyện tập phù hợp với mục tiêu được nêu.
+- Nếu thiếu cân nặng, chiều cao, tuổi, bệnh nền hoặc mức vận động, nêu giả định ngắn gọn.
 
 Yêu cầu:
-- Mỗi ngày gồm:
-  - Bữa sáng
-  - Bữa trưa
-  - Bữa tối
-  - Snack
-- Có calorie ước lượng
-- Thực tế, dễ áp dụng
+- Trả lời bằng tiếng Việt.
+- Dùng bảng markdown đầy đủ cột/hàng, dễ đọc trong Messenger.
+- Bảng tối thiểu có: Ngày/Bữa, Món hoặc hoạt động, Khẩu phần, Calories ước tính, Protein ước tính, Ghi chú.
+- Sau bảng có 3-5 gạch đầu dòng giải thích cách áp dụng.
+- Nếu số liệu chỉ là ước tính, ghi rõ là ước tính.
 
 Không được:
-- Nói chung chung
-- Lặp lại dữ liệu
+- Bịa bệnh lý hoặc chỉ định y khoa.
+- Dùng code block.
+- Lặp lại dữ liệu không cần thiết.
 
-Trả lời bằng tiếng Việt:
+Trả lời:
 """
 
-        res = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.5
-                }
-            }
-        )
+        try:
+            res = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.4
+                    }
+                },
+                timeout=60
+            )
+            plan = res.json().get("response", "")
+        except Exception as e:
+            plan = f"Không thể tạo kế hoạch từ LLM: {e}"
 
         return {
             "type": "plan",
-            "plan": res.json().get("response", "")
+            "plan": plan
         }

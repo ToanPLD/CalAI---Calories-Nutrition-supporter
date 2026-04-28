@@ -23,3 +23,18 @@ class EmbeddingCache:
     def set(self, text, vector):
         key = self._key(text)
         self.redis.set(key, json.dumps(vector))
+
+    def get_or_set(self, key, fn):
+        val = self.get(key)
+
+        if val is not None:
+            return val
+
+    # ⚠️ QUAN TRỌNG: phải gọi fn()
+        value = fn()
+
+        if value is None:
+            return None
+
+        self.set(key, value)
+        return value

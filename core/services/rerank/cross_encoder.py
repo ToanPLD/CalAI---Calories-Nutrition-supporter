@@ -6,10 +6,13 @@ class CrossEncoderReranker:
         self.model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
     def rerank(self, query: str, hits: list):
+        if not hits:
+            return []
 
         pairs = []
         for h in hits:
-            text = h.payload.get("dish_name", "") + " " + str(h.payload)
+            payload = h.payload or {}
+            text = payload.get("dish_name", "") + " " + str(payload)
             pairs.append((query, text))
 
         scores = self.model.predict(pairs)
