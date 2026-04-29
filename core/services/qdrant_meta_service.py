@@ -20,7 +20,8 @@ class QdrantMetaService:
             "lifestyle": "lifestyle_vectors_768",
             "diet": "diet_recommendations_vectors",
             "recipe_food": "food_recipes_vectors_768",
-            "recipe_general": "recipes_vectors_768"
+            "recipe_general": "recipes_vectors_768",
+            "recipe_image": settings.RECIPE_IMAGE_DATASET_COLLECTION
         }
 
         self._init_collections()

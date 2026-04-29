@@ -17,6 +17,7 @@ class CLIPService:
         self.model = CLIPModel.from_pretrained(
             "openai/clip-vit-base-patch32"
         ).to(self.device)
+        self.model.eval()
 
         self.cache = RedisCache()
 
@@ -55,7 +56,8 @@ class CLIPService:
 
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
 
-        vector = self.model.get_image_features(**inputs)[0].detach().cpu().numpy().tolist()
+        with torch.no_grad():
+            vector = self.model.get_image_features(**inputs)[0].detach().cpu().numpy().tolist()
 
         self.cache.set(f"img:{img_hash}", vector)
 
@@ -63,6 +65,53 @@ class CLIPService:
 
     def embed_image_pil(self, image):
         return self.embed_image(image)
+
+    def embed_images_batch(self, images):
+        if not images:
+            return []
+
+        vectors = [None] * len(images)
+        missing = []
+        missing_indexes = []
+
+        for index, image in enumerate(images):
+            img_hash, _ = self._hash_image(image)
+            cached = self.cache.get(f"img:{img_hash}")
+            cached_vector = self._decode_cached_vector(cached)
+            if cached_vector:
+                vectors[index] = cached_vector
+                continue
+
+            missing.append((img_hash, image))
+            missing_indexes.append(index)
+
+        if missing:
+            inputs = self.processor(
+                images=[image for _, image in missing],
+                return_tensors="pt",
+                padding=True
+            ).to(self.device)
+
+            with torch.no_grad():
+                batch_vectors = (
+                    self.model
+                    .get_image_features(**inputs)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .tolist()
+                )
+
+            for index, (img_hash, _), vector in zip(
+                missing_indexes,
+                missing,
+                batch_vectors
+            ):
+                self.cache.set(f"img:{img_hash}", vector)
+                vectors[index] = vector
+
+        return vectors
+
     def embed_text(self, text):
 
         text = text[:300]
@@ -76,7 +125,8 @@ class CLIPService:
             return cached_vector
 
         inputs = self.processor(text=[text], return_tensors="pt", truncation=True, max_length=77, padding=True).to(self.device)
-        vector = self.model.get_text_features(**inputs)[0].detach().cpu().numpy().tolist()
+        with torch.no_grad():
+            vector = self.model.get_text_features(**inputs)[0].detach().cpu().numpy().tolist()
 
     
         self.cache.set(key, vector)
@@ -84,13 +134,22 @@ class CLIPService:
         return vector
     def embed_text_batch(self, texts):
 
-        inputs = self.processor(
-            text=texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True
-        ).to(self.device)
+        vectors = []
+        batch_size = 64
 
-        outputs = self.model.get_text_features(**inputs)
+        for start in range(0, len(texts), batch_size):
+            batch = [text[:300] for text in texts[start:start + batch_size]]
+            inputs = self.processor(
+                text=batch,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=77
+            ).to(self.device)
 
-        return outputs.detach().cpu().numpy().tolist()
+            with torch.no_grad():
+                outputs = self.model.get_text_features(**inputs)
+
+            vectors.extend(outputs.detach().cpu().numpy().tolist())
+
+        return vectors

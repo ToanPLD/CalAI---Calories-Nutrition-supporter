@@ -60,3 +60,9 @@ redis==5.0.4
 # UTILS
 # =========================
 tqdm==4.66.4
+
+# =========================
+# vLLM
+# =========================
+# vLLM requires Python >= 3.10. Keep it in a separate Python 3.10+
+# environment and run it as an OpenAI-compatible server.

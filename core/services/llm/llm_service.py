@@ -11,11 +11,19 @@ class LLMService:
     def __init__(self):
         self.url = settings.LLM_API_URL
         self.model = settings.LLM_MODEL
+        self.backend = settings.LLM_BACKEND.lower().strip()
+        self.timeout = settings.LLM_TIMEOUT_SECONDS
 
     # =========================
     # COMMON CALL
     # =========================
     async def _call_llm(self, prompt, temperature=0.3, num_predict=None):
+        if self.backend in {"vllm", "openai"}:
+            return await self._call_openai_compatible(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=num_predict or settings.LLM_NUM_PREDICT
+            )
 
         payload = {
             "model": self.model,
@@ -27,12 +35,11 @@ class LLMService:
             payload["options"]["num_predict"] = num_predict
 
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
                 res = await client.post(self.url, json=payload)
                 res.raise_for_status()
 
             data = res.json()
-            print("🔍 LLM RAW:", data)
 
             text = data.get("response") or data.get("message", {}).get("content")
 
@@ -42,6 +49,42 @@ class LLMService:
             text = text.strip()
 
             return self._strip_code_fence(text)
+
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _call_openai_compatible(self, prompt, temperature=0.3, max_tokens=650):
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Bạn là trợ lý dinh dưỡng RAG. Luôn trả lời bằng tiếng Việt, "
+                        "ngắn gọn, có căn cứ từ context, không bịa số liệu."
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                res = await client.post(self.url, json=payload)
+                res.raise_for_status()
+
+            data = res.json()
+            text = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content")
+            )
+            if not text:
+                return {"error": "No response", "raw": data}
+            return self._strip_code_fence(text.strip())
 
         except Exception as e:
             return {"error": str(e)}
@@ -184,7 +227,11 @@ DỮ LIỆU TRUY XUẤT:
 Trả lời:
 """
 
-        text = await self._call_llm(prompt, temperature=0.25, num_predict=900)
+        text = await self._call_llm(
+            prompt,
+            temperature=0.25,
+            num_predict=settings.LLM_NUM_PREDICT
+        )
 
         if isinstance(text, dict):
             return {

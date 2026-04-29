@@ -2,6 +2,11 @@ from fastapi import FastAPI
 from core.services.query_pipeline import QueryPipeline
 from api.routes.food_analysis import router as food_router
 from api.routes.qa import router as qa_router
+from api.routes.recipe_dataset import router as recipe_dataset_router
+from api.routes.agentic_rag import (
+    router as agentic_rag_router,
+    get_agentic_rag
+)
 
 from typing import Optional
 from core.embedding.clip_service import CLIPService
@@ -11,6 +16,8 @@ app = FastAPI()
 pipeline = QueryPipeline()
 app.include_router(food_router)
 app.include_router(qa_router)
+app.include_router(recipe_dataset_router)
+app.include_router(agentic_rag_router)
 
 clip = CLIPService()
 qdrant = QdrantService()
@@ -49,5 +56,16 @@ def search(
 
 
 @app.get("/query")
-def query(q: str):
-    return pipeline.run(q)
+async def query(
+    q: str,
+    session_id: Optional[str] = None,
+    conversation_context: Optional[str] = None,
+    is_follow_up: Optional[bool] = None
+):
+    return await get_agentic_rag().run(
+        q,
+        top_k=6,
+        session_id=session_id,
+        conversation_context=conversation_context,
+        is_follow_up=is_follow_up
+    )

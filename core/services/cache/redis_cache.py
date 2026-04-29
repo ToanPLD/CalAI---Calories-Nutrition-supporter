@@ -1,9 +1,11 @@
 import redis
 import json
+import zlib
 from config.settings import settings
 
 
 class RedisCache:
+    COMPRESSED_PREFIX = b"zlib:"
 
     def __init__(self):
 
@@ -29,21 +31,40 @@ class RedisCache:
             self.client = None
 
     def _encode(self, value):
-        if isinstance(value, (bytes, str)):
-            return value
-        return json.dumps(value)
+        if isinstance(value, bytes):
+            raw = value
+        elif isinstance(value, str):
+            raw = value.encode("utf-8")
+        else:
+            raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
+
+        if len(raw) > settings.REDIS_CACHE_MAX_VALUE_BYTES:
+            return None
+
+        if len(raw) >= settings.REDIS_CACHE_COMPRESS_MIN_BYTES:
+            return self.COMPRESSED_PREFIX + zlib.compress(raw, level=6)
+
+        return raw
+
+    def _decode(self, value):
+        if isinstance(value, bytes) and value.startswith(self.COMPRESSED_PREFIX):
+            return zlib.decompress(value[len(self.COMPRESSED_PREFIX):])
+        return value
 
     def get(self, key):
         try:
             if self.client is None:
-                return self.memory.get(key)
-            return self.client.get(key)
+                return self._decode(self.memory.get(key))
+            return self._decode(self.client.get(key))
         except Exception:
             return None
 
-    def set(self, key, value, ttl=86400):
+    def set(self, key, value, ttl=None):
         try:
+            ttl = ttl or settings.CACHE_TTL
             value = self._encode(value)
+            if value is None:
+                return
             if self.client is None:
                 self.memory[key] = value
                 return

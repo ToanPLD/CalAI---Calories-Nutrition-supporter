@@ -105,6 +105,46 @@ class FoodAnalysisPipeline:
                 "source": "filename_hint"
             }
 
+        if "sushi" in token_set:
+            return {
+                "dish_name": "sushi platter",
+                "description": (
+                    "Set sushi nhiều loại gồm salmon nigiri, maki rong biển, avocado rolls, "
+                    "uramaki, tempura và nước chấm."
+                ),
+                "ingredients": [
+                    "sushi rice",
+                    "nori seaweed",
+                    "salmon",
+                    "avocado",
+                    "cucumber",
+                    "tempura shrimp",
+                    "sauce"
+                ],
+                "category": "Japanese sushi set",
+                "visual_form": "sushi platter",
+                "portion_description": "nhiều miếng sushi trên 2 đĩa, phù hợp 2-3 người",
+                "sub_items": [
+                    {
+                        "name": "salmon nigiri",
+                        "count": 5,
+                        "visible_ingredients": ["salmon", "sushi rice"]
+                    },
+                    {
+                        "name": "maki and uramaki rolls",
+                        "count": 20,
+                        "visible_ingredients": ["rice", "nori", "avocado", "cucumber", "fish"]
+                    },
+                    {
+                        "name": "tempura shrimp",
+                        "count": 2,
+                        "visible_ingredients": ["shrimp", "batter"]
+                    }
+                ],
+                "confidence": 0.78,
+                "source": "filename_hint"
+            }
+
         return None
 
     def _is_unknown_vision(self, vision):
@@ -126,12 +166,28 @@ class FoodAnalysisPipeline:
             if "slice" in portion and vision.get("visual_form") == "whole pizza":
                 vision["portion_description"] = "ước tính 1 pizza nguyên chiếc cỡ vừa"
 
+        if "sushi" in dish or "sushi" in category:
+            if not visual_form or visual_form == "slice":
+                vision["visual_form"] = "sushi platter"
+
+            if dish == "sushi" and vision.get("visual_form") == "sushi platter":
+                vision["dish_name"] = "sushi platter"
+
+            portion = self._normalize_text(vision.get("portion_description", ""))
+            if not portion:
+                vision["portion_description"] = "nhiều miếng sushi trên đĩa"
+
         return vision
 
     def _enrich_query(self, vision):
         dish = vision.get("dish_name", "")
         desc = vision.get("description", "")
         ingredients = " ".join(vision.get("ingredients") or [])
+        sub_items = " ".join(
+            f"{item.get('name', '')} {item.get('count', '')} {' '.join(item.get('visible_ingredients') or [])}"
+            for item in (vision.get("sub_items") or [])
+            if isinstance(item, dict)
+        )
 
         if "cơm tấm" in dish.lower():
             return (
@@ -145,7 +201,30 @@ class FoodAnalysisPipeline:
                 "pizza cheese sausage pepperoni ham meat tomato sauce bbq sauce whole pizza"
             )
 
-        return f"{dish} {desc} {ingredients}".strip()
+        if "sushi" in self._normalize_text(f"{dish} {desc} {ingredients} {sub_items}"):
+            return (
+                f"{dish}. {desc}. {ingredients}. {sub_items}. "
+                "sushi platter sushi set salmon nigiri maki roll uramaki avocado cucumber nori seaweed rice tempura shrimp sashimi Japanese"
+            )
+
+        return f"{dish} {desc} {ingredients} {sub_items}".strip()
+
+    def _sub_item_count(self, vision, *needles):
+        total = 0
+        for item in vision.get("sub_items") or []:
+            if not isinstance(item, dict):
+                continue
+
+            text = self._normalize_text(
+                " ".join([
+                    str(item.get("name", "")),
+                    " ".join(item.get("visible_ingredients") or [])
+                ])
+            )
+            if any(needle in text for needle in needles):
+                total += int(self._to_float(item.get("count")) or 0)
+
+        return total
 
     def _common_dish_estimate(self, dish_name, vision=None):
         normalized = self._normalize_text(dish_name)
@@ -199,6 +278,43 @@ class FoodAnalysisPipeline:
                 )
             }
 
+        if "sushi" in tokens or "maki" in tokens or "nigiri" in tokens:
+            vision = vision or {}
+            vision_text = self._normalize_text(vision)
+
+            salmon_nigiri = self._sub_item_count(vision, "salmon", "nigiri")
+            rolls = self._sub_item_count(vision, "maki", "roll", "uramaki", "avocado")
+            tempura = self._sub_item_count(vision, "tempura", "shrimp", "prawn")
+
+            if salmon_nigiri == 0 and rolls == 0:
+                salmon_nigiri = 5 if "salmon" in vision_text else 0
+                rolls = 20 if any(k in vision_text for k in ["maki", "roll", "avocado", "seaweed"]) else 18
+                tempura = 2 if "tempura" in vision_text else 0
+
+            calories = salmon_nigiri * 60 + rolls * 45 + tempura * 80
+            protein = salmon_nigiri * 3 + rolls * 1.6 + tempura * 4
+            carbs = salmon_nigiri * 8 + rolls * 7 + tempura * 8
+            fat = salmon_nigiri * 1.5 + rolls * 1.2 + tempura * 4
+
+            if calories <= 0:
+                calories, protein, carbs, fat = 1200, 45, 165, 35
+
+            return {
+                "calories": round(calories),
+                "protein": round(protein, 1),
+                "carbs": round(carbs, 1),
+                "fat": round(fat, 1),
+                "serving_size": "ước tính cho toàn bộ phần sushi nhìn thấy; có thể phù hợp 2-3 người",
+                "component_estimate": {
+                    "salmon_nigiri_pieces": salmon_nigiri,
+                    "maki_or_uramaki_pieces": rolls,
+                    "tempura_pieces": tempura
+                },
+                "note": (
+                    "ước tính theo số miếng nhìn thấy; số liệu thay đổi theo lượng cơm, cá, sốt mayo/spicy sauce và phần tempura"
+                )
+            }
+
         return None
 
     def _use_common_estimate_if_needed(self, dish_name, model_estimate, vision=None):
@@ -232,6 +348,83 @@ class FoodAnalysisPipeline:
         match = re.search(r"-?\d+(?:\.\d+)?", str(value))
         return float(match.group()) if match else None
 
+    def _nutrition_estimate_from_vision(self, vision):
+        if not isinstance(vision, dict):
+            return None
+
+        raw = vision.get("nutrition_estimate")
+        if not isinstance(raw, dict):
+            return None
+        portion_estimation = vision.get("portion_estimation")
+        portion_estimation = portion_estimation if isinstance(portion_estimation, dict) else {}
+
+        estimate = {
+            "calories": self._to_float(raw.get("calories")),
+            "protein": self._to_float(raw.get("protein")),
+            "carbs": self._to_float(raw.get("carbs")),
+            "fat": self._to_float(raw.get("fat")),
+            "fiber": self._to_float(raw.get("fiber")),
+            "sugar": self._to_float(raw.get("sugar")),
+            "sodium_mg": self._to_float(raw.get("sodium_mg")),
+            "serving_size": (
+                vision.get("portion_description")
+                or portion_estimation.get("method")
+                or raw.get("basis")
+            ),
+            "note": raw.get("basis") or "ước tính trực tiếp từ model vision theo khẩu phần nhìn thấy"
+        }
+
+        macro_values = [
+            estimate.get("calories"),
+            estimate.get("protein"),
+            estimate.get("carbs"),
+            estimate.get("fat")
+        ]
+        return estimate if any(value not in (None, 0) for value in macro_values) else None
+
+    def _estimated_grams_from_vision(self, vision):
+        if not isinstance(vision, dict):
+            return None
+
+        portion_estimation = vision.get("portion_estimation")
+        if not isinstance(portion_estimation, dict):
+            return None
+
+        grams = self._to_float(portion_estimation.get("estimated_grams"))
+        return grams if grams and grams > 0 else None
+
+    def _portion_estimate_from_rag(self, vision, retrieved):
+        grams = self._estimated_grams_from_vision(vision)
+        per_100g = self._payload_nutrition_per_100g(retrieved)
+        if not grams or not per_100g:
+            return None
+
+        scale = grams / 100
+        return {
+            "calories": (
+                round(per_100g["calories"] * scale)
+                if per_100g.get("calories") is not None
+                else None
+            ),
+            "protein": (
+                round(per_100g["protein"] * scale, 1)
+                if per_100g.get("protein") is not None
+                else None
+            ),
+            "carbs": (
+                round(per_100g["carbs"] * scale, 1)
+                if per_100g.get("carbs") is not None
+                else None
+            ),
+            "fat": (
+                round(per_100g["fat"] * scale, 1)
+                if per_100g.get("fat") is not None
+                else None
+            ),
+            "serving_size": f"ước tính theo phần nhìn thấy khoảng {round(grams)} g",
+            "note": "tính từ dữ liệu dinh dưỡng theo 100g và khẩu phần model vision ước lượng"
+        }
+
     def _payload_nutrition_per_100g(self, payload):
         if not payload:
             return None
@@ -263,44 +456,79 @@ class FoodAnalysisPipeline:
 
         return values if any(value is not None for value in values.values()) else None
 
+    def _payload_declared_nutrition(self, payload):
+        if not payload:
+            return None
+
+        text = str(payload.get("nutrition") or "")
+        if not text:
+            return None
+
+        patterns = {
+            "calories": r"calories?\s+(\d+(?:\.\d+)?)",
+            "protein": r"protein\s+(\d+(?:\.\d+)?)\s*g",
+            "carbs": r"(?:total\s+)?carbohydrate\s+(\d+(?:\.\d+)?)\s*g",
+            "fat": r"(?:total\s+)?fat\s+(\d+(?:\.\d+)?)\s*g"
+        }
+
+        values = {}
+        lower = text.lower()
+        for key, pattern in patterns.items():
+            match = re.search(pattern, lower)
+            values[key] = float(match.group(1)) if match else None
+
+        return values if any(value is not None for value in values.values()) else None
+
     def _nutrition_summary(self, retrieved, estimated):
         per_100g = self._payload_nutrition_per_100g(retrieved)
+        declared = self._payload_declared_nutrition(retrieved)
+        matched_item = (
+            retrieved.get("name")
+            or retrieved.get("dish_name")
+            or retrieved.get("food_name")
+            or retrieved.get("product_name")
+            or retrieved.get("recipe_name")
+            if retrieved else None
+        )
+
+        if per_100g and estimated:
+            note = (
+                "RAG cung cấp chỉ số theo 100g; estimated_visible_portion là ước tính cho phần ăn nhìn thấy trong ảnh."
+            )
+        elif retrieved:
+            note = (
+                "RAG cung cấp recipe/context phù hợp nhưng không có calories chuẩn theo khẩu phần; "
+                "estimated_visible_portion là ước tính từ món và số miếng nhìn thấy."
+            )
+        else:
+            note = "Không có RAG phù hợp; dùng ước tính món phổ biến cho phần ăn nhìn thấy."
 
         return {
-            "matched_item": (
-                retrieved.get("name")
-                or retrieved.get("dish_name")
-                or retrieved.get("food_name")
-                or retrieved.get("product_name")
-                if retrieved else None
-            ),
+            "matched_item": matched_item,
             "basis": (
                 retrieved.get("serving_size")
                 or ("100 g" if per_100g else estimated.get("serving_size"))
                 if retrieved else estimated.get("serving_size")
             ),
             "per_100g": per_100g,
+            "declared_nutrition": declared,
             "estimated_visible_portion": estimated,
-            "note": (
-                "RAG cung cấp chỉ số theo 100g; estimated_visible_portion là ước tính cho phần ăn nhìn thấy trong ảnh."
-                if per_100g and estimated else
-                "Không có RAG phù hợp; dùng ước tính món phổ biến cho phần ăn nhìn thấy."
-            )
+            "note": note
         }
 
     async def analyze(self, image, user_id=None, filename=None):
 
         # STEP 1: VISION
         vision = await self.qwen.analyze_food(image, filename_hint=filename)
-        filename_vision = self._filename_hint(filename)
-
-        if filename_vision and self._is_unknown_vision(vision):
-            vision = filename_vision
+        # The filename is already passed to the vision model as a weak hint.
+        # Do not replace the visual result with a hard-coded filename guess.
 
         vision = self._normalize_vision_details(vision)
 
         dish = vision.get("dish_name", "")
-        confidence = float(vision.get("confidence") or 0)
+        confidence = self._to_float(vision.get("confidence")) or 0
+        if confidence > 1:
+            confidence = confidence / 100
         query_text = self._enrich_query(vision)
 
         # STEP 2: CACHE
@@ -347,12 +575,20 @@ class FoodAnalysisPipeline:
                     break
 
         # STEP 6: NUTRITION MODEL
+        vision_estimate = self._nutrition_estimate_from_vision(vision)
+        rag_portion_estimate = self._portion_estimate_from_rag(vision, best)
         model_estimate = self.nutrition_model.predict(image_vec)
-        estimated, estimate_source = self._use_common_estimate_if_needed(
-            dish,
-            model_estimate,
-            vision=vision
-        )
+        if vision_estimate:
+            estimated, estimate_source = vision_estimate, "vision_model_estimate"
+        elif rag_portion_estimate:
+            estimated, estimate_source = rag_portion_estimate, "rag_portion_estimate"
+        else:
+            estimated, estimate_source = self._use_common_estimate_if_needed(
+                dish,
+                model_estimate,
+                vision=vision
+            )
+        summary = self._nutrition_summary(best, estimated)
 
         warnings = []
         if confidence < settings.VISION_MIN_CONFIDENCE:
@@ -369,16 +605,35 @@ class FoodAnalysisPipeline:
             "dish_name": dish,
             "confidence": confidence,
             "vision_detail": {
+                "image_quality": vision.get("image_quality", {}),
                 "description": vision.get("description"),
+                "possible_dishes": vision.get("possible_dishes", []),
+                "image_observations": vision.get("image_observations", []),
+                "visible_vs_inferred": vision.get("visible_vs_inferred", {}),
+                "identification_evidence": vision.get("identification_evidence", []),
                 "ingredients": vision.get("ingredients", []),
+                "sub_items": vision.get("sub_items", []),
                 "category": vision.get("category"),
                 "visual_form": vision.get("visual_form"),
-                "portion_description": vision.get("portion_description")
+                "portion_description": vision.get("portion_description"),
+                "portion_estimation": vision.get("portion_estimation", {}),
+                "health_context": vision.get("health_context", {}),
+                "dietary_assessment": vision.get("dietary_assessment", {}),
+                "risk_flags": vision.get("risk_flags", []),
+                "recommendations": vision.get("recommendations", {}),
+                "table_rows": vision.get("table_rows", []),
+                "uncertainty": vision.get("uncertainty", {})
             },
             "estimated_nutrition": estimated,
             "retrieved_nutrition": best,
-            "nutrition_summary": self._nutrition_summary(best, estimated),
-            "nutrition_source": "rag" if best else estimate_source,
+            "nutrition_summary": summary,
+            "nutrition_source": (
+                "rag_with_portion_estimate"
+                if best and estimate_source == "rag_portion_estimate"
+                else "rag_with_estimate"
+                if best and not summary.get("per_100g")
+                else ("rag" if best else estimate_source)
+            ),
             "warnings": warnings,
             "analysis_note": (
                 "Không dùng kết quả RAG nếu payload không liên quan trực tiếp tới món đã nhận diện."

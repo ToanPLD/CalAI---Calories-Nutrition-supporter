@@ -12,8 +12,8 @@ class FoodRAGService:
             api_key=settings.QDRANT_API_KEY
         )
 
-        # dùng config thay vì hardcode
-        self.collections = settings.TEXT_COLLECTIONS
+        # Food-image RAG should not search beverage/exercise/lifestyle collections.
+        self.collections = settings.FOOD_RAG_COLLECTIONS
         self.stopwords = {
             "with", "and", "the", "food", "dish", "meal", "plate",
             "mon", "an", "va", "voi", "phan", "khau"
@@ -25,10 +25,17 @@ class FoodRAGService:
             "bi": {"pork", "skin", "shredded"},
             "cha": {"egg", "meatloaf", "omelet", "omelette"},
             "trung": {"egg", "fried"},
+            "sushi": {"maki", "nigiri", "sashimi", "roll", "japanese"},
+            "maki": {"sushi", "roll", "seaweed"},
+            "nigiri": {"sushi", "salmon", "fish", "rice"},
+            "sashimi": {"sushi", "salmon", "fish"},
+            "salmon": {"sushi", "nigiri", "fish"},
+            "avocado": {"sushi", "roll"},
+            "tempura": {"sushi", "fried", "shrimp", "prawn"},
         }
         self.generic_dishes = {
             "pizza", "burger", "sandwich", "salad", "pasta", "noodle",
-            "rice", "soup", "cake", "bread", "drink", "smoothie"
+            "rice", "soup", "cake", "bread", "drink", "smoothie", "sushi"
         }
         self.packaged_markers = {
             "code", "brands", "brand", "quantity", "countries",
@@ -104,8 +111,8 @@ class FoodRAGService:
 
         priority_fields = [
             "dish_name", "food_name", "name", "product_name", "title",
-            "description", "ingredients", "ingredients_text", "category",
-            "categories", "domain"
+            "recipe_name", "cuisine", "description", "ingredients",
+            "ingredients_text", "category", "categories", "domain"
         ]
 
         parts = []

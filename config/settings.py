@@ -39,8 +39,27 @@ class Settings(BaseSettings):
         "lifestyle_obesity_vectors_768",
         "recipes_vectors_768",
         "beverage_vectors_768",
-        "food_recipes_vectors_768"
+        "food_recipes_vectors_768",
+        "meta_vectors"
     ]
+
+    FOOD_RAG_COLLECTIONS: List[str] = [
+        "food_recipes_vectors_768",
+        "recipes_vectors_768",
+        "food_text_vectors_768",
+        "food_common_vectors_768",
+        "food_global_10k_vectors_768",
+        "food_nutrition_vectors_768",
+        "food_nutrition_dev_vectors_768",
+        "food_vectors_768",
+        "food_fruit_vectors_768"
+    ]
+
+    RECIPE_IMAGE_DATASET: str = (
+        "pes12017000148/food-ingredients-and-recipe-dataset-with-images"
+    )
+    RECIPE_IMAGE_DATASET_COLLECTION: str = "food_ingredients_recipes_multimodal"
+    RECIPE_IMAGE_META_DOMAIN: str = "recipe_image"
 
     LEGACY_COLLECTIONS: List[str] = [
         "food_vectors",
@@ -61,13 +80,22 @@ class Settings(BaseSettings):
     RAG_CANDIDATE_TOP_K: int = 20
 
     BATCH_SIZE: int = 32
-    CACHE_TTL: int = 86400 
+    CACHE_TTL: int = 86400
+    REDIS_CACHE_COMPRESS_MIN_BYTES: int = 2048
+    REDIS_CACHE_MAX_VALUE_BYTES: int = 250000
+    AGENTIC_CACHE_TTL: int = 1800
 
-    VISION_MODEL: str = "llava:7b"
+    VISION_MODEL: str = "qwen2.5vl:3b"
+    VISION_FALLBACK_MODELS: List[str] = ["llava:7b", "llava:latest"]
     VISION_API_URL: str = "http://localhost:11434/api/generate"
+    VISION_TIMEOUT_SECONDS: float = 25.0
+    VISION_MAX_MODEL_ATTEMPTS: int = 2
 
     LLM_MODEL: str = "qcwind/qwen2.5-7B-instruct-Q4_K_M:latest"
     LLM_API_URL: str = "http://localhost:11434/api/generate"
+    LLM_BACKEND: str = "ollama"  # ollama | vllm | openai
+    LLM_TIMEOUT_SECONDS: float = 35.0
+    LLM_NUM_PREDICT: int = 650
 
 
 settings = Settings()
