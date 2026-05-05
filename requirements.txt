@@ -20,13 +20,10 @@ qdrant-client==1.11.0
 # AI / ML
 # =========================
 torch==2.3.1
-torchvision==0.18.1
 transformers==4.44.0
-timm==0.9.16
 
 # sentence-transformers (768 embedding)
 sentence-transformers==2.7.0
-rank-bm25==0.2.2
 
 # =========================
 # DATA
@@ -36,7 +33,6 @@ kagglehub==0.3.13
 numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.6.1
-joblib==1.5.3
 
 # =========================
 # IMAGE
@@ -60,9 +56,3 @@ redis==5.0.4
 # UTILS
 # =========================
 tqdm==4.66.4
-
-# =========================
-# vLLM
-# =========================
-# vLLM requires Python >= 3.10. Keep it in a separate Python 3.10+
-# environment and run it as an OpenAI-compatible server.

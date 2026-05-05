@@ -6,6 +6,7 @@ import json
 import re
 
 from config.settings import settings
+from core.prompts.agentic_prompts import FOOD_VISION_PROMPT
 
 
 class QwenVLService:
@@ -16,100 +17,39 @@ class QwenVLService:
 
     def image_to_base64(self, image: Image.Image):
         image = image.convert("RGB")
-        image.thumbnail((1024, 1024))
+        max_side = max(384, int(settings.VISION_IMAGE_MAX_SIDE))
+        image.thumbnail((max_side, max_side))
         buf = BytesIO()
-        image.save(buf, format="JPEG", quality=75, optimize=True)
+        image.save(
+            buf,
+            format="JPEG",
+            quality=max(40, min(85, int(settings.VISION_IMAGE_JPEG_QUALITY))),
+            optimize=True
+        )
         return base64.b64encode(buf.getvalue()).decode()
-
-    def _candidate_models(self):
-        models = [self.model, *settings.VISION_FALLBACK_MODELS]
-        unique = []
-        for model in models:
-            model = str(model or "").strip()
-            if model and model not in unique:
-                unique.append(model)
-        return unique[:max(1, settings.VISION_MAX_MODEL_ATTEMPTS)]
 
     async def _post_vision(self, payload, timeout=None):
         timeout = timeout or settings.VISION_TIMEOUT_SECONDS
-        last_error = None
-        for model in self._candidate_models():
-            payload = dict(payload)
-            payload["model"] = model
-            try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    res = await client.post(self.url, json=payload)
-                data = res.json()
-                if data.get("error"):
-                    last_error = data.get("error")
-                    continue
-                data["_model_used"] = model
-                return data
-            except Exception as exc:
-                last_error = str(exc)
-                continue
-        return {
-            "error": last_error or "No vision model returned a usable response",
-            "_model_used": None
-        }
+        payload = dict(payload)
+        payload["model"] = self.model
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.post(self.url, json=payload)
+                res.raise_for_status()
+            data = res.json()
+            if data.get("error"):
+                return {"error": data.get("error"), "_model_used": self.model}
+            data["_model_used"] = self.model
+            return data
+        except Exception as exc:
+            return {"error": str(exc), "_model_used": self.model}
 
     async def analyze_food(self, image: Image.Image, filename_hint=None):
 
         base64_image = self.image_to_base64(image)
 
-        prompt = """
-You are CalAI Vision Pro: a senior food-image analyst, clinical nutrition doctor-style advisor, registered-dietitian style estimator, and practical long-term health consultant. Analyze the IMAGE first. The filename is only a weak hint and must never override visible evidence. Do not diagnose disease, prescribe treatment, or claim certainty beyond the image. All nutrition values are estimates for the visible edible portion.
-
-Internal protocol to follow before answering:
-1. Image quality audit: clarity, angle, lighting, occlusion, crop, scale references, and how they affect confidence.
-2. Visual evidence extraction: list only what is visible, then separate what is inferred from cultural dish patterns.
-3. Dish identification: name the most likely dish, include 2-4 alternatives when ambiguous, and justify each with evidence.
-4. Portion reasoning: estimate serving count, grams, volume, pieces, bowl/plate size, broth/sauce amount, meat thickness, rice/noodle volume, and uncertainty.
-5. Nutrition analysis: estimate calories, protein, carbs, fat, fiber, sugar, sodium, energy density, macro balance, and main drivers of the estimate.
-6. Clinical nutrition assessment: discuss strengths, concerns, blood-sugar load, sodium risk, saturated-fat/fried-food risk, protein adequacy, vegetable/fiber adequacy, hydration/broth/sauce caveats, and who should be cautious.
-7. Counseling: give practical adjustments for weight loss, muscle gain, blood sugar control, heart-health style eating, and general balanced eating.
-8. Table readiness: include compact rows that the UI can render as tables when the user asks to compare, list, plan, or review numbers.
-9. Uncertainty: state what cannot be seen, what could change the estimate, and the best follow-up questions.
-
-Output requirements:
-- Output ONLY valid JSON. No markdown. No prose outside JSON.
-- Write all text values in Vietnamese.
-- Use null for unknown numeric values.
-- Numeric fields must be plain numbers with no units. Put units in text fields only.
-- Keep arrays concise but information-rich. Avoid generic advice that is not tied to the image.
-- Do not invent hidden ingredients; mark them as inferred when not visible.
-- confidence and probabilities must be 0-1.
-
-Required JSON:
-{
-  "image_quality": {"clarity": "good | fair | poor", "lighting": "good | fair | poor", "angle": "...", "occlusion": "...", "confidence_impact": "..."},
-  "dish_name": "most likely dish name or unknown",
-  "possible_dishes": [{"name": "...", "probability": 0.0, "why": "..."}],
-  "description": "...",
-  "image_observations": ["visible evidence only"],
-  "visible_vs_inferred": {"visible": ["..."], "inferred": ["..."], "not_visible": ["..."]},
-  "identification_evidence": ["why this dish is likely"],
-  "ingredients": ["visible or likely ingredient"],
-  "category": "...",
-  "visual_form": "bowl | plate | rice plate | noodle soup | soup | salad | sandwich | pizza | sushi platter | packaged product | drink | dessert | snack | mixed meal | unknown",
-  "portion_description": "...",
-  "portion_estimation": {"servings": null, "estimated_grams": null, "volume_or_count": "...", "method": "...", "uncertainty": "low | medium | high"},
-  "sub_items": [{"name": "...", "count": 0, "estimated_amount": "...", "visible_ingredients": ["..."]}],
-  "nutrition_estimate": {"calories": null, "protein": null, "carbs": null, "fat": null, "fiber": null, "sugar": null, "sodium_mg": null, "basis": "...", "main_calorie_drivers": ["..."]},
-  "health_context": {"cooking_method": "...", "sauce_or_condiment": "...", "estimated_servings": "...", "energy_density": "low | moderate | high | unknown", "processing_level": "minimally processed | mixed | processed | unknown", "macro_balance": "..."},
-  "dietary_assessment": {"health_score_0_10": null, "strengths": ["..."], "concerns": ["..."], "suitable_for": ["..."], "caution_for": ["..."]},
-  "risk_flags": [{"risk": "...", "severity": "low | medium | high", "reason": "..."}],
-  "recommendations": {"for_weight_loss": ["..."], "for_muscle_gain": ["..."], "for_blood_sugar": ["..."], "for_heart_health": ["..."], "healthier_adjustments": ["..."]},
-  "table_rows": [{"metric": "Calories", "value": null, "unit": "kcal", "note": "visible portion estimate"}],
-  "uncertainty": {"level": "low | medium | high", "reasons": ["..."], "needs_user_input": ["..."]},
-  "confidence": 0.0
-}
-
-Filename hint:
-""".strip()
-
         payload = {
-            "prompt": f"{prompt}\n{filename_hint or ''}",
+            "prompt": f"{FOOD_VISION_PROMPT}\n\nFilename hint:\n{filename_hint or ''}",
             "images": [base64_image],
             "stream": False
         }
@@ -117,8 +57,8 @@ Filename hint:
         try:
             data = await self._post_vision(payload)
 
-            # 🔍 DEBUG (giữ lại để check nếu lỗi)
-            print("🔍 QWEN RAW:", data)
+            if data.get("error"):
+                print(f"[Vision] Qwen-VL error: {data.get('error')}")
 
             # =========================
             # SAFE EXTRACT RESPONSE

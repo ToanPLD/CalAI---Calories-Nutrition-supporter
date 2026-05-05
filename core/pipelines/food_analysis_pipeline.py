@@ -3,10 +3,10 @@ from core.embedding.clip_service import CLIPService
 from core.embedding.text_embedding_service import TextEmbeddingService
 from core.services.rag.food_rag_service import FoodRAGService
 from core.services.rerank.cross_encoder import CrossEncoderReranker
-from core.services.nutrition.nutrition_model import NutritionRegressionModel
 from core.services.user.user_tracking import UserTrackingService
 from core.services.cache.embedding_cache import EmbeddingCache
-from core.services.rag.meta_search_pipeline import MetaSearchPipeline
+from core.services.llm.llm_service import LLMService
+from core.services.vision.vit_cnn_service import ViTCNNFoodClassifier
 from config.settings import settings
 import re
 import unicodedata
@@ -14,15 +14,69 @@ import unicodedata
 class FoodAnalysisPipeline:
 
     def __init__(self):
-        self.qwen = QwenVLService()
-        self.clip = CLIPService()
-        self.text_embed = TextEmbeddingService()
-        self.rag = FoodRAGService()
-        self.rerank = CrossEncoderReranker()
-        self.nutrition_model = NutritionRegressionModel()
-        self.user_tracking = UserTrackingService()
-        self.cache = EmbeddingCache()
-        self.meta_search = MetaSearchPipeline()
+        self._qwen = None
+        self._clip = None
+        self._text_embed = None
+        self._rag = None
+        self._rerank = None
+        self._user_tracking = None
+        self._cache = None
+        self._llm = None
+        self._image_classifier = None
+
+    @property
+    def qwen(self):
+        if self._qwen is None:
+            self._qwen = QwenVLService()
+        return self._qwen
+
+    @property
+    def clip(self):
+        if self._clip is None:
+            self._clip = CLIPService()
+        return self._clip
+
+    @property
+    def text_embed(self):
+        if self._text_embed is None:
+            self._text_embed = TextEmbeddingService()
+        return self._text_embed
+
+    @property
+    def rag(self):
+        if self._rag is None:
+            self._rag = FoodRAGService()
+        return self._rag
+
+    @property
+    def rerank(self):
+        if self._rerank is None:
+            self._rerank = CrossEncoderReranker()
+        return self._rerank
+
+    @property
+    def user_tracking(self):
+        if self._user_tracking is None:
+            self._user_tracking = UserTrackingService()
+        return self._user_tracking
+
+    @property
+    def cache(self):
+        if self._cache is None:
+            self._cache = EmbeddingCache()
+        return self._cache
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            self._llm = LLMService()
+        return self._llm
+
+    @property
+    def image_classifier(self):
+        if self._image_classifier is None:
+            self._image_classifier = ViTCNNFoodClassifier(clip=self.clip)
+        return self._image_classifier
 
     def _image_key(self, image):
         import hashlib
@@ -33,123 +87,55 @@ class FoodAnalysisPipeline:
         text = "".join(ch for ch in text if not unicodedata.combining(ch))
         return text.lower()
 
-    def _filename_hint(self, filename):
-        if not filename:
-            return None
-
-        name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-        name = name.rsplit(".", 1)[0]
-        normalized = self._normalize_text(name)
-        tokens = re.findall(r"[a-z0-9]+", normalized)
-        token_set = set(tokens)
-        compact = "".join(tokens)
-
-        looks_like_com_tam = (
-            "com" in token_set
-            and (
-                "suon" in token_set
-                or "sun" in token_set
-                or ("su" in token_set and "n" in token_set)
-                or "suon" in compact
-            )
-            and (
-                "bi" in token_set
-                or "cha" in token_set
-                or "trung" in token_set
-                or "ch" in token_set
-                or "tr" in token_set
-            )
-        )
-
-        if looks_like_com_tam:
-            return {
-                "dish_name": "cơm tấm sườn bì chả trứng",
-                "description": (
-                    "Đĩa cơm tấm Việt Nam với sườn nướng, bì, chả trứng, "
-                    "trứng ốp la, dưa leo, đồ chua và nước mắm."
-                ),
-                "ingredients": [
-                    "cơm tấm",
-                    "sườn nướng",
-                    "bì heo",
-                    "chả trứng",
-                    "trứng ốp la",
-                    "dưa leo",
-                    "đồ chua",
-                    "nước mắm"
-                ],
-                "category": "Vietnamese rice plate",
-                "confidence": 0.72,
-                "source": "filename_hint"
-            }
-
-        if "pizza" in token_set:
-            return {
-                "dish_name": "pizza thịt phô mai",
-                "description": (
-                    "Pizza đế dày với phô mai, sốt cà chua, topping thịt/xúc xích "
-                    "và sốt phủ bên trên."
-                ),
-                "ingredients": [
-                    "đế pizza",
-                    "phô mai",
-                    "sốt cà chua",
-                    "xúc xích",
-                    "thịt",
-                    "sốt phủ"
-                ],
-                "category": "pizza",
-                "visual_form": "whole pizza",
-                "portion_description": "ước tính 1 pizza nguyên chiếc cỡ vừa",
-                "confidence": 0.70,
-                "source": "filename_hint"
-            }
-
-        if "sushi" in token_set:
-            return {
-                "dish_name": "sushi platter",
-                "description": (
-                    "Set sushi nhiều loại gồm salmon nigiri, maki rong biển, avocado rolls, "
-                    "uramaki, tempura và nước chấm."
-                ),
-                "ingredients": [
-                    "sushi rice",
-                    "nori seaweed",
-                    "salmon",
-                    "avocado",
-                    "cucumber",
-                    "tempura shrimp",
-                    "sauce"
-                ],
-                "category": "Japanese sushi set",
-                "visual_form": "sushi platter",
-                "portion_description": "nhiều miếng sushi trên 2 đĩa, phù hợp 2-3 người",
-                "sub_items": [
-                    {
-                        "name": "salmon nigiri",
-                        "count": 5,
-                        "visible_ingredients": ["salmon", "sushi rice"]
-                    },
-                    {
-                        "name": "maki and uramaki rolls",
-                        "count": 20,
-                        "visible_ingredients": ["rice", "nori", "avocado", "cucumber", "fish"]
-                    },
-                    {
-                        "name": "tempura shrimp",
-                        "count": 2,
-                        "visible_ingredients": ["shrimp", "batter"]
-                    }
-                ],
-                "confidence": 0.78,
-                "source": "filename_hint"
-            }
-
-        return None
-
     def _is_unknown_vision(self, vision):
         dish = self._normalize_text(vision.get("dish_name", ""))
         return not dish or dish in {"unknown", "none", "null", "khong ro"}
+
+    def _classifier_query_text(self, classification):
+        predictions = (classification or {}).get("top_predictions") or []
+        terms = []
+        for item in predictions[:3]:
+            terms.extend([
+                item.get("name"),
+                item.get("label"),
+                *(item.get("aliases") or [])[:3],
+            ])
+        return " ".join(str(term) for term in terms if term).strip()
+
+    def _merge_classifier_with_vision(self, vision, classification):
+        vision = vision if isinstance(vision, dict) else {}
+        classification = classification if isinstance(classification, dict) else {}
+        predictions = classification.get("top_predictions") or []
+        top = predictions[0] if predictions else {}
+
+        if not predictions:
+            vision["vit_cnn_analysis"] = classification
+            return vision
+
+        classifier_confidence = self._to_float(classification.get("confidence")) or 0
+        if self._is_unknown_vision(vision) and classifier_confidence >= settings.IMAGE_CLASSIFIER_MIN_CONFIDENCE:
+            seeded = self.image_classifier.to_vision_seed(classification)
+            seeded["vit_cnn_analysis"] = classification
+            return seeded
+
+        vision["vit_cnn_analysis"] = classification
+        existing = vision.get("possible_dishes")
+        existing = existing if isinstance(existing, list) else []
+        classifier_dishes = [
+            {
+                "name": item.get("name"),
+                "probability": item.get("probability"),
+                "why": "ViT/CNN classifier",
+            }
+            for item in predictions[:3]
+            if item.get("name")
+        ]
+        vision["possible_dishes"] = existing[:5] or classifier_dishes
+        if not vision.get("identification_evidence"):
+            vision["identification_evidence"] = [
+                f"ViT/CNN classifier top-1: {top.get('name')}."
+            ]
+        return vision
 
     def _normalize_vision_details(self, vision):
         dish = self._normalize_text(vision.get("dish_name", ""))
@@ -183,6 +169,7 @@ class FoodAnalysisPipeline:
         dish = vision.get("dish_name", "")
         desc = vision.get("description", "")
         ingredients = " ".join(vision.get("ingredients") or [])
+        classifier_text = self._classifier_query_text(vision.get("vit_cnn_analysis"))
         sub_items = " ".join(
             f"{item.get('name', '')} {item.get('count', '')} {' '.join(item.get('visible_ingredients') or [])}"
             for item in (vision.get("sub_items") or [])
@@ -191,153 +178,23 @@ class FoodAnalysisPipeline:
 
         if "cơm tấm" in dish.lower():
             return (
-                f"{dish}. {desc}. {ingredients}. "
+                f"{dish}. {desc}. {ingredients}. {classifier_text}. "
                 "broken rice grilled pork chop shredded pork skin egg meatloaf fried egg Vietnamese rice plate"
             )
 
         if "pizza" in self._normalize_text(dish):
             return (
-                f"{dish}. {desc}. {ingredients}. "
+                f"{dish}. {desc}. {ingredients}. {classifier_text}. "
                 "pizza cheese sausage pepperoni ham meat tomato sauce bbq sauce whole pizza"
             )
 
-        if "sushi" in self._normalize_text(f"{dish} {desc} {ingredients} {sub_items}"):
+        if "sushi" in self._normalize_text(f"{dish} {desc} {ingredients} {classifier_text} {sub_items}"):
             return (
-                f"{dish}. {desc}. {ingredients}. {sub_items}. "
+                f"{dish}. {desc}. {ingredients}. {classifier_text}. {sub_items}. "
                 "sushi platter sushi set salmon nigiri maki roll uramaki avocado cucumber nori seaweed rice tempura shrimp sashimi Japanese"
             )
 
-        return f"{dish} {desc} {ingredients} {sub_items}".strip()
-
-    def _sub_item_count(self, vision, *needles):
-        total = 0
-        for item in vision.get("sub_items") or []:
-            if not isinstance(item, dict):
-                continue
-
-            text = self._normalize_text(
-                " ".join([
-                    str(item.get("name", "")),
-                    " ".join(item.get("visible_ingredients") or [])
-                ])
-            )
-            if any(needle in text for needle in needles):
-                total += int(self._to_float(item.get("count")) or 0)
-
-        return total
-
-    def _common_dish_estimate(self, dish_name, vision=None):
-        normalized = self._normalize_text(dish_name)
-        tokens = set(re.findall(r"[a-z0-9]+", normalized))
-
-        if {"com", "tam", "suon"}.issubset(tokens) or (
-            "com" in tokens and "suon" in tokens
-        ):
-            return {
-                "calories": 850,
-                "protein": 42,
-                "carbs": 92,
-                "fat": 34,
-                "note": (
-                    "ước tính cho 1 đĩa cơm tấm sườn bì chả trứng thông thường; "
-                    "có thể dao động theo lượng cơm, mỡ hành, nước mắm và kích thước miếng sườn"
-                )
-            }
-
-        if "pizza" in tokens:
-            vision_text = self._normalize_text(vision or {})
-            meat_toppings = any(
-                word in vision_text
-                for word in [
-                    "sausage", "pepperoni", "ham", "bacon", "beef",
-                    "meat", "xuc xich", "thit"
-                ]
-            )
-
-            if meat_toppings:
-                return {
-                    "calories": 2200,
-                    "protein": 88,
-                    "carbs": 255,
-                    "fat": 92,
-                    "serving_size": "ước tính 1 pizza nguyên chiếc cỡ vừa; khoảng 270-300 kcal mỗi lát nếu chia 8 lát",
-                    "note": (
-                        "ước tính theo pizza phô mai kèm thịt/xúc xích; số liệu thay đổi theo kích thước đế, "
-                        "lượng phô mai, thịt và sốt"
-                    )
-                }
-
-            return {
-                "calories": 1900,
-                "protein": 72,
-                "carbs": 240,
-                "fat": 72,
-                "serving_size": "ước tính 1 pizza nguyên chiếc cỡ vừa; khoảng 235-250 kcal mỗi lát nếu chia 8 lát",
-                "note": (
-                    "ước tính theo pizza phô mai/cà chua phổ thông; số liệu thay đổi theo kích thước và topping"
-                )
-            }
-
-        if "sushi" in tokens or "maki" in tokens or "nigiri" in tokens:
-            vision = vision or {}
-            vision_text = self._normalize_text(vision)
-
-            salmon_nigiri = self._sub_item_count(vision, "salmon", "nigiri")
-            rolls = self._sub_item_count(vision, "maki", "roll", "uramaki", "avocado")
-            tempura = self._sub_item_count(vision, "tempura", "shrimp", "prawn")
-
-            if salmon_nigiri == 0 and rolls == 0:
-                salmon_nigiri = 5 if "salmon" in vision_text else 0
-                rolls = 20 if any(k in vision_text for k in ["maki", "roll", "avocado", "seaweed"]) else 18
-                tempura = 2 if "tempura" in vision_text else 0
-
-            calories = salmon_nigiri * 60 + rolls * 45 + tempura * 80
-            protein = salmon_nigiri * 3 + rolls * 1.6 + tempura * 4
-            carbs = salmon_nigiri * 8 + rolls * 7 + tempura * 8
-            fat = salmon_nigiri * 1.5 + rolls * 1.2 + tempura * 4
-
-            if calories <= 0:
-                calories, protein, carbs, fat = 1200, 45, 165, 35
-
-            return {
-                "calories": round(calories),
-                "protein": round(protein, 1),
-                "carbs": round(carbs, 1),
-                "fat": round(fat, 1),
-                "serving_size": "ước tính cho toàn bộ phần sushi nhìn thấy; có thể phù hợp 2-3 người",
-                "component_estimate": {
-                    "salmon_nigiri_pieces": salmon_nigiri,
-                    "maki_or_uramaki_pieces": rolls,
-                    "tempura_pieces": tempura
-                },
-                "note": (
-                    "ước tính theo số miếng nhìn thấy; số liệu thay đổi theo lượng cơm, cá, sốt mayo/spicy sauce và phần tempura"
-                )
-            }
-
-        return None
-
-    def _use_common_estimate_if_needed(self, dish_name, model_estimate, vision=None):
-        common = self._common_dish_estimate(dish_name, vision=vision)
-        if not common:
-            return model_estimate, "model_estimate"
-
-        if not model_estimate:
-            return common, "common_estimate"
-
-        numeric_values = [
-            model_estimate.get("calories"),
-            model_estimate.get("protein"),
-            model_estimate.get("carbs"),
-            model_estimate.get("fat")
-        ]
-        is_empty_estimate = all(value in (None, 0) for value in numeric_values)
-        is_model_fallback = str(model_estimate.get("note", "")).startswith("fallback")
-
-        if is_empty_estimate or is_model_fallback:
-            return common, "common_estimate"
-
-        return model_estimate, "model_estimate"
+        return f"{dish} {desc} {ingredients} {classifier_text} {sub_items}".strip()
 
     def _to_float(self, value):
         if value is None:
@@ -491,6 +348,8 @@ class FoodAnalysisPipeline:
             if retrieved else None
         )
 
+        estimated = estimated or None
+
         if per_100g and estimated:
             note = (
                 "RAG cung cấp chỉ số theo 100g; estimated_visible_portion là ước tính cho phần ăn nhìn thấy trong ảnh."
@@ -498,17 +357,17 @@ class FoodAnalysisPipeline:
         elif retrieved:
             note = (
                 "RAG cung cấp recipe/context phù hợp nhưng không có calories chuẩn theo khẩu phần; "
-                "estimated_visible_portion là ước tính từ món và số miếng nhìn thấy."
+                "estimated_visible_portion chỉ có khi model vision hoặc khẩu phần đủ dữ liệu."
             )
         else:
-            note = "Không có RAG phù hợp; dùng ước tính món phổ biến cho phần ăn nhìn thấy."
+            note = "Không có RAG phù hợp; chỉ trả dữ liệu model vision quan sát được từ ảnh."
 
         return {
             "matched_item": matched_item,
             "basis": (
                 retrieved.get("serving_size")
-                or ("100 g" if per_100g else estimated.get("serving_size"))
-                if retrieved else estimated.get("serving_size")
+                or ("100 g" if per_100g else (estimated or {}).get("serving_size"))
+                if retrieved else (estimated or {}).get("serving_size")
             ),
             "per_100g": per_100g,
             "declared_nutrition": declared,
@@ -516,13 +375,24 @@ class FoodAnalysisPipeline:
             "note": note
         }
 
-    async def analyze(self, image, user_id=None, filename=None):
+    async def analyze(self, image, user_id=None, filename=None, question=None):
 
-        # STEP 1: VISION
-        vision = await self.qwen.analyze_food(image, filename_hint=filename)
+        # STEP 1: VIT/CNN IMAGE CLASSIFIER + VISION
+        vit_cnn = {}
+        if settings.IMAGE_CLASSIFIER_ENABLED:
+            vit_cnn = self.image_classifier.classify(image, filename_hint=filename)
+
+        classifier_hint = self._classifier_query_text(vit_cnn)
+        filename_hint = (
+            f"{filename or ''}\nViT/CNN classifier hints: {classifier_hint}"
+            if classifier_hint
+            else filename
+        )
+        vision = await self.qwen.analyze_food(image, filename_hint=filename_hint)
         # The filename is already passed to the vision model as a weak hint.
         # Do not replace the visual result with a hard-coded filename guess.
 
+        vision = self._merge_classifier_with_vision(vision, vit_cnn)
         vision = self._normalize_vision_details(vision)
 
         dish = vision.get("dish_name", "")
@@ -530,24 +400,31 @@ class FoodAnalysisPipeline:
         if confidence > 1:
             confidence = confidence / 100
         query_text = self._enrich_query(vision)
+        has_visual_dish = bool(dish and not self._is_unknown_vision(vision))
+        has_classifier_hint = bool(self._classifier_query_text(vit_cnn))
+        should_search = has_visual_dish or has_classifier_hint
 
         # STEP 2: CACHE
         img_key = "img_" + self._image_key(image)
         txt_key = "txt768_" + query_text
 
-        image_vec = self.cache.get_or_set(
-            img_key,
-            lambda: self.clip.embed_image_pil(image)
-        )
+        image_vec = None
+        text_vec = None
+        if should_search:
+            image_vec = self.cache.get_or_set(
+                img_key,
+                lambda: self.clip.embed_image_pil(image)
+            )
 
-        text_vec = self.cache.get_or_set(
-            txt_key,
-            lambda: self.text_embed.embed(query_text)
-        )
+            search_text = query_text if has_visual_dish else self._classifier_query_text(vit_cnn)
+            text_vec = self.cache.get_or_set(
+                "txt768_" + search_text,
+                lambda: self.text_embed.embed(search_text)
+            )
 
         # STEP 3: RAG
         hits = []
-        if dish and not self._is_unknown_vision(vision):
+        if should_search:
             hits = self.rag.hybrid_search(
                 image_vec,
                 text_vec,
@@ -557,37 +434,20 @@ class FoodAnalysisPipeline:
             )
 
         # STEP 4: RERANK
-        hits = self.rerank.rerank(query_text, hits)
+        if hits:
+            hits = self.rerank.rerank(query_text, hits)
 
         best = hits[0].payload if hits else {}
 
-        # STEP 5: FALLBACK
-        if not best and dish and not self._is_unknown_vision(vision):
-            results = self.meta_search.search(dish)
-            for result in results:
-                data = result.get("data") or {}
-                if self.rag.is_payload_relevant(
-                    dish,
-                    data,
-                    vision_context=vision
-                ):
-                    best = data
-                    break
-
-        # STEP 6: NUTRITION MODEL
+        # STEP 5: NUTRITION ESTIMATE
         vision_estimate = self._nutrition_estimate_from_vision(vision)
         rag_portion_estimate = self._portion_estimate_from_rag(vision, best)
-        model_estimate = self.nutrition_model.predict(image_vec)
         if vision_estimate:
             estimated, estimate_source = vision_estimate, "vision_model_estimate"
         elif rag_portion_estimate:
             estimated, estimate_source = rag_portion_estimate, "rag_portion_estimate"
         else:
-            estimated, estimate_source = self._use_common_estimate_if_needed(
-                dish,
-                model_estimate,
-                vision=vision
-            )
+            estimated, estimate_source = None, "not_available"
         summary = self._nutrition_summary(best, estimated)
 
         warnings = []
@@ -600,7 +460,7 @@ class FoodAnalysisPipeline:
                 "Dữ liệu RAG là sản phẩm đóng gói; chỉ nên dùng khi ảnh có bao bì/nhãn tương ứng."
             )
 
-        # STEP 7: RESULT
+        # STEP 6: RESULT
         result = {
             "dish_name": dish,
             "confidence": confidence,
@@ -622,7 +482,8 @@ class FoodAnalysisPipeline:
                 "risk_flags": vision.get("risk_flags", []),
                 "recommendations": vision.get("recommendations", {}),
                 "table_rows": vision.get("table_rows", []),
-                "uncertainty": vision.get("uncertainty", {})
+                "uncertainty": vision.get("uncertainty", {}),
+                "vit_cnn_analysis": vision.get("vit_cnn_analysis", {})
             },
             "estimated_nutrition": estimated,
             "retrieved_nutrition": best,
@@ -630,8 +491,8 @@ class FoodAnalysisPipeline:
             "nutrition_source": (
                 "rag_with_portion_estimate"
                 if best and estimate_source == "rag_portion_estimate"
-                else "rag_with_estimate"
-                if best and not summary.get("per_100g")
+                else "rag_with_vision_estimate"
+                if best and estimated
                 else ("rag" if best else estimate_source)
             ),
             "warnings": warnings,
@@ -641,7 +502,14 @@ class FoodAnalysisPipeline:
             )
         }
 
-        # STEP 8: USER TRACK
+        answer = await self.llm.answer_food_image(
+            question=question or "Đây là món gì? Hãy phân tích dinh dưỡng và tư vấn.",
+            analysis=result
+        )
+        if answer:
+            result["answer"] = answer
+
+        # STEP 7: USER TRACK
         if user_id:
             self.user_tracking.log_meal(user_id, result)
 

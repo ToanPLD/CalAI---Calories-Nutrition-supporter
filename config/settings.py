@@ -84,18 +84,26 @@ class Settings(BaseSettings):
     REDIS_CACHE_COMPRESS_MIN_BYTES: int = 2048
     REDIS_CACHE_MAX_VALUE_BYTES: int = 250000
     AGENTIC_CACHE_TTL: int = 1800
+    AGENTIC_CACHE_ENABLED: bool = False
 
-    VISION_MODEL: str = "qwen2.5vl:3b"
-    VISION_FALLBACK_MODELS: List[str] = ["llava:7b", "llava:latest"]
+    VISION_MODEL: str = "llava:7b"
     VISION_API_URL: str = "http://localhost:11434/api/generate"
-    VISION_TIMEOUT_SECONDS: float = 25.0
-    VISION_MAX_MODEL_ATTEMPTS: int = 2
+    VISION_TIMEOUT_SECONDS: float = 90.0
+    VISION_IMAGE_MAX_SIDE: int = 640
+    VISION_IMAGE_JPEG_QUALITY: int = 60
+    IMAGE_CLASSIFIER_ENABLED: bool = True
+    IMAGE_CLASSIFIER_BACKBONE: str = "clip-vit+resnet50-cnn"
+    IMAGE_CLASSIFIER_MODEL: str = "openai/clip-vit-base-patch32"
+    IMAGE_CLASSIFIER_CNN_ENABLED: bool = True
+    IMAGE_CLASSIFIER_CNN_MODEL: str = "torchvision/resnet50-imagenet1k"
+    IMAGE_CLASSIFIER_TOP_K: int = 5
+    IMAGE_CLASSIFIER_MIN_CONFIDENCE: float = 0.08
 
     LLM_MODEL: str = "qcwind/qwen2.5-7B-instruct-Q4_K_M:latest"
     LLM_API_URL: str = "http://localhost:11434/api/generate"
-    LLM_BACKEND: str = "ollama"  # ollama | vllm | openai
-    LLM_TIMEOUT_SECONDS: float = 35.0
-    LLM_NUM_PREDICT: int = 650
+    LLM_BACKEND: str = "ollama"  # ollama | openai
+    LLM_TIMEOUT_SECONDS: float = 60.0
+    LLM_NUM_PREDICT: int = 512
 
 
 settings = Settings()

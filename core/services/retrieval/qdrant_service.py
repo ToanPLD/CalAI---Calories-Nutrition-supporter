@@ -31,6 +31,11 @@ class QdrantService:
         except Exception as e:
             print("❌ Cannot fetch collections:", e)
 
+    def available_collections(self):
+        if not self._collections_cache:
+            self._refresh_collections()
+        return self._collections_cache
+
     def ensure_collection(self, name, dim):
 
         try:

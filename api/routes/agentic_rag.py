@@ -1,6 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from core.agent.agentic_rag import AgenticRAG
 
@@ -16,6 +16,7 @@ class AgenticQueryRequest(BaseModel):
     session_id: Optional[str] = None
     conversation_context: Optional[str] = None
     is_follow_up: Optional[bool] = None
+    user_profile: Optional[Dict[str, Any]] = None
 
 
 def get_agentic_rag():
@@ -34,22 +35,28 @@ async def query_agentic_rag(req: AgenticQueryRequest):
         intent=req.intent,
         session_id=req.session_id,
         conversation_context=req.conversation_context,
-        is_follow_up=req.is_follow_up
+        is_follow_up=req.is_follow_up,
+        user_profile=req.user_profile
     )
 
 
 @router.get("/query")
 async def query_agentic_rag_get(
-    q: str,
+    q: Optional[str] = None,
+    question: Optional[str] = Query(default=None),
     top_k: int = 6,
     intent: Optional[str] = None,
     session_id: Optional[str] = None,
     conversation_context: Optional[str] = None,
     is_follow_up: Optional[bool] = None
 ):
+    final_query = q or question
+    if not final_query:
+        raise HTTPException(status_code=422, detail="Missing query parameter `q` or `question`.")
+
     agent = get_agentic_rag()
     return await agent.run(
-        query=q,
+        query=final_query,
         top_k=top_k,
         intent=intent,
         session_id=session_id,

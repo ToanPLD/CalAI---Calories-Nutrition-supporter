@@ -17,5 +17,4 @@ def ensure_list_vector(vec):
     if isinstance(vec, list):
         return vec
 
-    # fallback
     return list(vec)

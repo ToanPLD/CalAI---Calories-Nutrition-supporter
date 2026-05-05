@@ -1,5 +1,4 @@
-from fastapi import FastAPI
-from core.services.query_pipeline import QueryPipeline
+from fastapi import FastAPI, HTTPException, Query
 from api.routes.food_analysis import router as food_router
 from api.routes.qa import router as qa_router
 from api.routes.recipe_dataset import router as recipe_dataset_router
@@ -13,17 +12,25 @@ from core.embedding.clip_service import CLIPService
 from core.services.retrieval.qdrant_service import QdrantService
 
 app = FastAPI()
-pipeline = QueryPipeline()
 app.include_router(food_router)
 app.include_router(qa_router)
 app.include_router(recipe_dataset_router)
 app.include_router(agentic_rag_router)
 
-clip = CLIPService()
-qdrant = QdrantService()
+_clip = None
+_qdrant = None
 
 COLLECTION = "food_text_vectors"
 
+
+def get_search_services():
+    global _clip, _qdrant
+    if _clip is None:
+        _clip = CLIPService()
+    if _qdrant is None:
+        _qdrant = QdrantService()
+    return _clip, _qdrant
+                                                                                                                                                                                                                    
 
 # =========================
 # SEARCH API
@@ -35,6 +42,7 @@ def search(
     max_calories: Optional[float] = None,
     top_k: int = 10
 ):
+    clip, qdrant = get_search_services()
     vec = clip.embed_text(query)
 
     results = qdrant.search(
@@ -57,13 +65,18 @@ def search(
 
 @app.get("/query")
 async def query(
-    q: str,
+    q: Optional[str] = None,
+    question: Optional[str] = Query(default=None),
     session_id: Optional[str] = None,
     conversation_context: Optional[str] = None,
     is_follow_up: Optional[bool] = None
 ):
+    final_query = q or question
+    if not final_query:
+        raise HTTPException(status_code=422, detail="Missing query parameter `q` or `question`.")
+
     return await get_agentic_rag().run(
-        q,
+        final_query,
         top_k=6,
         session_id=session_id,
         conversation_context=conversation_context,

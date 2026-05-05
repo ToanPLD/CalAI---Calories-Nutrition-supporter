@@ -4,6 +4,11 @@ import re
 from typing import Any
 
 from config.settings import settings
+from core.prompts.agentic_prompts import (
+    AGENTIC_SYSTEM_PROMPT,
+    build_agentic_answer_prompt,
+    build_food_image_answer_prompt,
+)
 
 
 class LLMService:
@@ -18,7 +23,7 @@ class LLMService:
     # COMMON CALL
     # =========================
     async def _call_llm(self, prompt, temperature=0.3, num_predict=None):
-        if self.backend in {"vllm", "openai"}:
+        if self.backend == "openai":
             return await self._call_openai_compatible(
                 prompt=prompt,
                 temperature=temperature,
@@ -28,6 +33,7 @@ class LLMService:
         payload = {
             "model": self.model,
             "prompt": prompt,
+            "system": AGENTIC_SYSTEM_PROMPT,
             "stream": False,
             "options": {"temperature": temperature}
         }
@@ -59,10 +65,7 @@ class LLMService:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "Bạn là trợ lý dinh dưỡng RAG. Luôn trả lời bằng tiếng Việt, "
-                        "ngắn gọn, có căn cứ từ context, không bịa số liệu."
-                    )
+                    "content": AGENTIC_SYSTEM_PROMPT
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -139,60 +142,291 @@ class LLMService:
 
         return compacted
 
-    # =========================
-    # IMAGE → NUTRITION
-    # =========================
-    async def generate_final(self, vision, nutrition=None, rag=None):
-        rag_context = self._compact_context(rag or [], limit=5)
+    def _first_present(self, payload, keys):
+        for key in keys:
+            value = payload.get(key)
+            if value not in (None, ""):
+                return key, self._safe_value(value)
+        return None, None
 
+    def _compact_agentic_context(self, context, limit=6):
+        if not context:
+            return []
+
+        name_keys = [
+            "title", "Name", "Shrt_Desc", "recipe_name", "name", "dish_name",
+            "food", "food_name", "product_name", "Activity, Exercise or Sport (1 hour)",
+            "Activity", "Subtype"
+        ]
+        nutrient_keys = [
+            "serving_size", "GmWt_Desc1", "GmWt_1",
+            "calories", "Energ_Kcal", "energy-kcal_100g", "Caloric Value",
+            "protein", "Protein", "Protein_(g)", "proteins_100g",
+            "carbohydrate", "carbs", "Carbohydrates", "Carbohydrt_(g)", "carbohydrates_100g",
+            "fat", "Fat", "total_fat", "Lipid_Tot_(g)", "fat_100g",
+            "fiber", "Fiber_TD_(g)", "fiber_100g",
+            "sodium", "Sodium_(mg)", "sodium_mg"
+        ]
+        exercise_keys = [
+            "Duration (min)", "Distance (km)", "METs", "Calories per kg",
+            "130 lb", "155 lb", "180 lb", "205 lb",
+            "50 kg (110 lb)", "60 kg (132 lb)", "70 kg (154 lb)",
+            "80 kg (176 lb)", "90 kg (198 lb)", "100 kg (220 lb)"
+        ]
+        text_keys = [
+            "ingredients", "Ingredients", "cleaned_ingredients_list",
+            "instructions", "Directions", "directions", "description"
+        ]
+
+        compacted = []
+        for raw_item in context[:limit]:
+            payload = getattr(raw_item, "payload", raw_item) or {}
+            if not isinstance(payload, dict):
+                compacted.append(self._safe_value(payload))
+                continue
+
+            item = {}
+            name_key, name_value = self._first_present(payload, name_keys)
+            if name_key:
+                item["name"] = name_value
+
+            for key in ["domain", "source_collection", "source_dataset", "source_row"]:
+                if payload.get(key) not in (None, ""):
+                    item[key] = self._safe_value(payload.get(key))
+
+            for key in nutrient_keys + exercise_keys + text_keys:
+                value = payload.get(key)
+                if value not in (None, ""):
+                    item[key] = self._safe_value(value)
+
+            if len(item) <= 3:
+                for key, value in payload.items():
+                    if key in item or key in {"vector", "embedding", "image", "image_path"}:
+                        continue
+                    if value in (None, "") or isinstance(value, (dict, list, tuple)):
+                        continue
+                    item[key] = self._safe_value(value)
+                    if len(item) >= 10:
+                        break
+
+            compacted.append(item)
+
+        return compacted
+
+    def _context_lines(self, context):
+        lines = []
+        for index, item in enumerate(context or [], start=1):
+            if not isinstance(item, dict):
+                lines.append(f"{index}. {item}")
+                continue
+
+            name = (
+                item.get("name")
+                or item.get("food")
+                or item.get("title")
+                or item.get("Activity")
+                or item.get("Activity, Exercise or Sport (1 hour)")
+                or "item"
+            )
+            metrics = []
+            for label, keys in [
+                ("kcal", ["calories", "Caloric Value", "Energ_Kcal", "energy-kcal_100g"]),
+                ("protein", ["protein", "Protein", "Protein_(g)", "proteins_100g"]),
+                ("carb", ["carbohydrate", "carbs", "Carbohydrates", "Carbohydrt_(g)", "carbohydrates_100g"]),
+                ("fat", ["fat", "Fat", "total_fat", "Lipid_Tot_(g)", "fat_100g"]),
+                ("serving", ["serving_size", "GmWt_Desc1"]),
+            ]:
+                for key in keys:
+                    value = item.get(key)
+                    if value not in (None, ""):
+                        metrics.append(f"{label}={value}")
+                        break
+            lines.append(f"{index}. {name}: {', '.join(metrics) if metrics else 'no numeric metrics'}")
+        return "\n".join(lines)
+
+    def _first_metric(self, item, keys):
+        for key in keys:
+            value = item.get(key)
+            if value not in (None, ""):
+                return value
+        return "—"
+
+    def _context_metric_table(self, context):
+        rows = ["name | serving | kcal | protein | carb | fat"]
+        for item in context or []:
+            if not isinstance(item, dict):
+                continue
+            name = (
+                item.get("name")
+                or item.get("food")
+                or item.get("title")
+                or item.get("Activity")
+                or item.get("Activity, Exercise or Sport (1 hour)")
+                or "item"
+            )
+            rows.append(
+                " | ".join(str(value) for value in [
+                    name,
+                    self._first_metric(item, ["serving_size", "GmWt_Desc1"]),
+                    self._first_metric(item, ["calories", "Caloric Value", "Energ_Kcal", "energy-kcal_100g"]),
+                    self._first_metric(item, ["protein", "Protein", "Protein_(g)", "proteins_100g"]),
+                    self._first_metric(item, ["carbohydrate", "carbs", "Carbohydrates", "Carbohydrt_(g)", "carbohydrates_100g"]),
+                    self._first_metric(item, ["fat", "Fat", "total_fat", "Lipid_Tot_(g)", "fat_100g"]),
+                ])
+            )
+        return "\n".join(rows)
+
+    def _has_nutrition_values(self, nutrition):
+        if not isinstance(nutrition, dict):
+            return False
+        for key in ["calories", "kcal", "protein", "carbs", "carbohydrate", "fat"]:
+            value = nutrition.get(key)
+            if value not in (None, "", 0):
+                return True
+        return False
+
+    def _food_image_lacks_nutrition(self, analysis):
+        if not isinstance(analysis, dict):
+            return True
+        summary = analysis.get("nutrition_summary") or {}
+        return (
+            analysis.get("nutrition_source") == "not_available"
+            and not self._has_nutrition_values(analysis.get("estimated_nutrition"))
+            and not self._has_nutrition_values(summary.get("estimated_visible_portion"))
+        )
+
+    def _text_has_unsupported_nutrition_numbers(self, text):
+        normalized = str(text or "").lower()
+        if re.search(r"[\u4e00-\u9fff]", normalized):
+            return True
+        if not re.search(r"\d", normalized):
+            return False
+        nutrition_terms = [
+            "kcal", "calo", "calorie", "calories", "protein", "đạm",
+            "carb", "carbs", "carbonhydrate", "carbohydrate", "fat",
+            "chất béo", "gram", "grams", "g ", "卡路里", "蛋白",
+        ]
+        return any(term in normalized for term in nutrition_terms)
+
+    def _grounded_food_image_answer(self, question, analysis):
+        analysis = analysis if isinstance(analysis, dict) else {}
+        vision = analysis.get("vision_detail") or {}
+        dish = analysis.get("dish_name") or "món trong ảnh"
+        confidence = analysis.get("confidence")
+        confidence_text = ""
+        if isinstance(confidence, (int, float)):
+            confidence_text = f" (độ tin cậy khoảng {round(float(confidence) * 100)}%)"
+
+        ingredients = vision.get("ingredients") or []
+        ingredient_text = ""
+        if ingredients:
+            ingredient_text = " Mình thấy/có thể suy luận các thành phần chính: " + ", ".join(
+                str(item) for item in ingredients[:4]
+            ) + "."
+
+        if self._food_image_lacks_nutrition(analysis):
+            return (
+                f"Khả năng cao đây là {dish}{confidence_text}.{ingredient_text} "
+                "Mình chưa có đủ dữ liệu khẩu phần từ ảnh để ước tính calories và macro đáng tin cậy. "
+                "Bạn cho mình biết khẩu phần khoảng bao nhiêu bát/gram hoặc thành phần chính nhé?"
+            ).strip()
+
+        nutrition = analysis.get("estimated_nutrition") or (
+            (analysis.get("nutrition_summary") or {}).get("estimated_visible_portion") or {}
+        )
+        metrics = []
+        for label, key, unit in [
+            ("calories", "calories", "kcal"),
+            ("protein", "protein", "g"),
+            ("carb", "carbs", "g"),
+            ("fat", "fat", "g"),
+        ]:
+            value = nutrition.get(key)
+            if value not in (None, "", 0):
+                metrics.append(f"{label}: {value} {unit}")
+        metric_text = "; ".join(metrics)
+        return (
+            f"Khả năng cao đây là {dish}{confidence_text}.{ingredient_text} "
+            f"Ước tính cho phần nhìn thấy: {metric_text}."
+        ).strip()
+
+    def _is_low_value_answer(self, text):
+        normalized = str(text or "").strip()
+        if len(normalized) < 45:
+            return True
+        table_tokens = normalized.replace(" ", "").lower()
+        return table_tokens in {
+            "món|khẩuphần|kcal|p|c|f",
+            "|món|khẩuphần|kcal|p|c|f|",
+        }
+
+    async def _retry_agentic_short(self, query, intent, compact_context, citations):
         prompt = f"""
-Bạn là chuyên gia dinh dưỡng và fitness coach. Nhiệm vụ của bạn là hợp nhất kết quả nhận diện ảnh với dữ liệu dinh dưỡng được truy xuất.
+Cau hoi: {query}
+Intent: {intent}
+Bang du lieu duoc phep dung, khong duoc sua so:
+{self._context_metric_table(compact_context)}
 
-Nguyên tắc:
-- Ưu tiên dữ liệu truy xuất được khi có chỉ số rõ ràng.
-- Nếu thiếu dữ liệu, dùng null thay vì bịa số chính xác.
-- Nếu phải ước lượng, ghi rõ trong health_advice là ước lượng.
-- Trả lời đúng JSON, không markdown, không giải thích ngoài JSON.
+Hay tra loi bang tieng Viet tu nhien.
+Neu lap thuc don: chuyen tung dong trong bang du lieu thanh Markdown table voi cot Mon | Khau phan | kcal | Protein | Carb | Fat.
+Chi copy so lieu tu bang du lieu. Khong tinh lai. Khong them mon moi. Khong nhac 7700 tru khi cau hoi ve tang/giam can.
+Nguon: {json.dumps((citations or [])[:3], ensure_ascii=False, separators=(",", ":"))}
+""".strip()
+        text = await self._call_llm(
+            prompt,
+            temperature=0.2,
+            num_predict=min(260, max(settings.LLM_NUM_PREDICT, 220))
+        )
+        if isinstance(text, dict):
+            return None
+        return text
 
-INPUT:
-- Vision:
-{json.dumps(vision, ensure_ascii=False)}
+    async def answer_food_image(self, question, analysis):
+        prompt = build_food_image_answer_prompt(question=question, analysis=analysis)
+        text = await self._call_llm(
+            prompt,
+            temperature=0.2,
+            num_predict=settings.LLM_NUM_PREDICT
+        )
+        if isinstance(text, dict):
+            return None
+        return text
 
-- Nutrition data:
-{json.dumps(nutrition or {}, ensure_ascii=False)}
-
-- Retrieved context:
-{json.dumps(rag_context, ensure_ascii=False)}
-
-JSON schema bắt buộc, các chỉ số có thể là number hoặc null:
-{{
-  "dish_name": "...",
-  "description": "...",
-  "nutrition": {{
-    "calories": 0,
-    "protein": 0,
-    "carbs": 0,
-    "fat": 0
-  }},
-  "confidence_note": "...",
-  "health_advice": "..."
-}}
-"""
-
-        text = await self._call_llm(prompt, temperature=0.2, num_predict=500)
-
-        if isinstance(text, dict):  # error case
-            return text
-
-        try:
-            return self._extract_json_object(text)
-        except Exception:
-            return {
-                "error": "JSON parse failed",
-                "raw_text": text,
-                "vision": vision,
-                "nutrition": nutrition
-            }
+    async def answer_agentic(
+        self,
+        query,
+        intent,
+        context,
+        citations,
+        conversation_context=None,
+        user_profile_text=None
+    ):
+        compact_context = self._compact_agentic_context(context, limit=4)
+        prompt = build_agentic_answer_prompt(
+            query=query,
+            intent=intent,
+            context=compact_context,
+            citations=citations,
+            conversation_context=conversation_context,
+            user_profile_text=user_profile_text
+        )
+        text = await self._call_llm(
+            prompt,
+            temperature=0.25,
+            num_predict=settings.LLM_NUM_PREDICT
+        )
+        if isinstance(text, dict):
+            return None
+        if self._is_low_value_answer(text):
+            retry_text = await self._retry_agentic_short(
+                query=query,
+                intent=intent,
+                compact_context=compact_context,
+                citations=citations
+            )
+            if retry_text and not self._is_low_value_answer(retry_text):
+                return retry_text
+        return text
 
     # =========================
     # TEXT → QA
@@ -201,23 +435,6 @@ JSON schema bắt buộc, các chỉ số có thể là number hoặc null:
         compact_context = self._compact_context(context, limit=10)
 
         prompt = f"""
-Bạn là trợ lý RAG chuyên gia về dinh dưỡng, thực phẩm, đồ uống, vận động và lối sống.
-
-Mục tiêu:
-- Hiểu sâu ý định thật của người hỏi trước khi trả lời.
-- Trả lời bằng tiếng Việt tự nhiên, rõ ràng, có tính tư vấn thực tế.
-- Dựa trên DỮ LIỆU được cung cấp. Nếu thiếu dữ liệu, nói rõ phần nào chưa đủ và đưa cách hỏi bổ sung.
-- Không bịa chỉ số dinh dưỡng, không biến ước lượng thành sự thật.
-- Không dùng code block. Nội dung phải dễ đọc trong chatbox Messenger.
-
-Quy tắc định dạng linh hoạt:
-- Nếu câu hỏi là so sánh, xếp hạng, lựa chọn nhiều món, thực đơn, lịch ăn/tập, hoặc có từ 3 mục dữ liệu trở lên: tạo bảng markdown đầy đủ cột và hàng.
-- Bảng nên có các cột phù hợp như: Mục, Calories, Protein, Carb, Fat, Điểm mạnh, Lưu ý. Với thực đơn/lịch: Ngày/Bữa, Món, Khẩu phần, Calories, Protein, Ghi chú.
-- Nếu dữ liệu thiếu ở ô nào, ghi "-"; không tự chế số.
-- Sau bảng, thêm 2-4 gạch đầu dòng kết luận và khuyến nghị.
-- Nếu câu hỏi đơn giản: trả lời trực tiếp 3-6 câu, chỉ thêm bảng khi thật sự giúp người dùng hiểu nhanh hơn.
-- Nếu nội dung có rủi ro sức khỏe, thêm nhắc nhở ngắn rằng đây không thay thế tư vấn y tế cá nhân.
-
 CÂU HỎI:
 {question}
 

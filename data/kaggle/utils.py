@@ -32,7 +32,7 @@ def load_csv_safe(file_path):
         print("⚡ Loaded with C engine")
 
     except Exception as e:
-        print("⚠️ C engine failed → fallback python engine")
+        print("⚠️ C engine failed → retry with python engine")
 
         try:
             df = pd.read_csv(

@@ -1,6 +1,6 @@
 # api/routes/food_analysis.py
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
 from PIL import Image
@@ -10,11 +10,21 @@ from core.pipelines.food_analysis_pipeline import FoodAnalysisPipeline
 
 router = APIRouter(prefix="/api/food", tags=["Food Analysis"])
 
-pipeline = FoodAnalysisPipeline()
+_pipeline = None
+
+
+def get_food_analysis_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        _pipeline = FoodAnalysisPipeline()
+    return _pipeline
 
 
 @router.post("/analyze")
-async def analyze_food_image(file: UploadFile = File(...)):
+async def analyze_food_image(
+    file: UploadFile = File(...),
+    question: str = Form(default="")
+):
 
     if not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(status_code=400, detail="Invalid file type")
@@ -22,7 +32,7 @@ async def analyze_food_image(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
 
-        if len(image_bytes) > 2 * 1024 * 1024: #2mb
+        if len(image_bytes) > 8 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="File too large")
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -33,13 +43,14 @@ async def analyze_food_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
     try:
-        result = await pipeline.analyze(
+        result = await get_food_analysis_pipeline().analyze(
             image=image,
-            filename=file.filename
+            filename=file.filename,
+            question=question
         )
 
     except Exception as e:
-        print("❌ Pipeline error:", e)
-        raise HTTPException(status_code=500, detail="Processing failed")
+        print("[FoodAnalysis] Pipeline error:", repr(e))
+        raise HTTPException(status_code=500, detail=f"Processing failed: {type(e).__name__}")
 
     return JSONResponse(content=result)

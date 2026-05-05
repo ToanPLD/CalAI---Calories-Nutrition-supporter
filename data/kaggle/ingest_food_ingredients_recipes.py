@@ -311,17 +311,17 @@ def build_image_vectors(clip, payloads, image_vector_source):
             for index, vector in zip(image_indexes, clip.embed_images_batch(images)):
                 vectors[index] = vector
 
-    fallback_texts = []
-    fallback_indexes = []
+    text_vector_inputs = []
+    text_vector_indexes = []
     for index, payload in enumerate(payloads):
         if vectors[index] is not None:
             continue
 
-        fallback_texts.append(payload.get("image_vector_text") or payload["text_for_search"])
-        fallback_indexes.append(index)
+        text_vector_inputs.append(payload.get("image_vector_text") or payload["text_for_search"])
+        text_vector_indexes.append(index)
 
-    if fallback_texts:
-        for index, vector in zip(fallback_indexes, clip.embed_text_batch(fallback_texts)):
+    if text_vector_inputs:
+        for index, vector in zip(text_vector_indexes, clip.embed_text_batch(text_vector_inputs)):
             vectors[index] = vector
 
     return vectors
